@@ -191,7 +191,7 @@ function pin-ls() {
 }
 
 function pin-tags() {
-  grep -o ':\w*:' -R $CMDS_DIR -h --exclude-dir .git --color=auto
+  grep -o ':\w*:' -R $CMDS_DIR -h --exclude-dir .git --color=auto | sort --unique
 }
 
 function pin-fork() {
