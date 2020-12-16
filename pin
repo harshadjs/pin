@@ -79,14 +79,6 @@ function lookup-filename() {
   return 1
 }
 
-function label() {
-  if [ "$HIDE_SHA1" = "true" ]; then
-    echo -en "\033[4;33m$1:\033[0m  "
-  else
-    echo -en "\033[4;33m$1:\033[0m <$2>  "
-  fi
-}
-
 ## Implementation of various subcommands
 function pin-sync() {
   cd $CMDS_DIR
@@ -121,7 +113,6 @@ Pin helps you organize your commands. COMMAND can be one of the
 following:
 
    ls           List all saved commands
-   ls-full      List all saved commands with description
    run          Run a new or a saved command. If running a new command
                 also, ask the user the command should be saved
    import       Import a command from URL
@@ -138,6 +129,7 @@ following:
    sync         Sync your commands to your own comamands store
    generate-b64 Generate pin.tar.xz.base64 file
    install      Install pin
+   tags         List all tags
 
 You can directly pass the index of the command or the SHA1 to run
 the command."""
@@ -186,11 +178,20 @@ function pin-exec() {
   exit $?
 }
 
+function parse-cmd-out() {
+  awk -v FS="," \
+    'BEGIN{print "ID\tCommand";print "==============="} \
+    {printf "\033[1m%s\033[0m\t\033[1m%s\033[0m\n\t%s%s",$1,substr($2, 2, length($2)-2),$3,ORS}'
+}
+
 function pin-ls() {
   jq -s . $(list-all-cmds) | jq 'to_entries' | \
-    jq -r '.[] | [.key, .value.cmd] | @csv' | \
-    awk -v FS="," 'BEGIN{print "ID\tName"; \
-    print "============"}{printf "%s\t\033[1m%s\033[0m%s",$1,substr($2, 2, length($2)-2),ORS}'
+    jq -r '.[] | [.key, .value.cmd, .value.desc] | @csv' | \
+    parse-cmd-out
+}
+
+function pin-tags() {
+  grep -o ':\w*:' -R $CMDS_DIR -h --exclude-dir .git --color=auto
 }
 
 function pin-fork() {
@@ -323,19 +324,16 @@ function pin-describe {
     echo "Command not found."
     exit 1
   fi
-  echo "SHA1:		$(basename $filename)"
-  echo -n "Command:	"
-  cat $filename | jq -r .cmd
-  echo -n "Description:	"
-  cat $filename | jq -r .desc
+  echo "SHA1:		$(tput bold)$(basename $filename)$(tput sgr0)"
+  echo "Command:	$(tput bold)$(cat $filename | jq -r .cmd)$(tput sgr0)"
+  echo "Description:	$(cat $filename | jq -r .desc)"
 }
 
 function pin-grep {
   jq -s . $(list-all-cmds) | jq 'to_entries' | \
-    jq -r --arg filter $1 '.[] | select((.value.desc | contains($filter)) or (.value.cmd | contains($filter))) | [.key, .value.cmd, .value.desc] | @csv' | \
-    awk -v FS="," \
-    'BEGIN{print "ID\tText";print "============"} \
-    {printf "\033[1m%s\033[0m\t\033[1m%s\033[0m\n\t%s%s",$1,substr($2, 2, length($2)-2),$3,ORS}'
+    jq -r --arg filter $1 \
+    '.[] | select((.value.desc | contains($filter)) or (.value.cmd | contains($filter))) | [.key, .value.cmd, .value.desc] | @csv' | \
+    parse-cmd-out
 }
 
 function pin-alias {
@@ -359,8 +357,6 @@ fi
 
 if [ "$1" = "ls" ]; then
   pin-ls
-elif [ "$1" = "ls-full" ]; then
-  pin-ls full
 elif [ "$1" = "rm" ]; then
   pin-rm
 elif [ "$1" = "sync" ]; then
@@ -385,6 +381,9 @@ elif [ "$1" = "run" ]; then
 elif [ "$1" = "alias" ]; then
   shift
   pin-alias $@
+elif [ "$1" = "tags" ]; then
+  shift
+  pin-tags $@
 elif [ "$1" = "save" ]; then
   RUN_COMMAND=0
   shift

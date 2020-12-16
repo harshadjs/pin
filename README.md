@@ -31,6 +31,8 @@ $ curl https://raw.githubusercontent.com/harshadjs/pin/main/pin > pin; chmod +x 
 
 * `Pin` allows you to execute saved commands with custom arguments.
 
+* `Pin` allows you to tag and search saved commands.
+
 * `Pin` allows you to export commands to [cl1p.net](http://cl1p.net) for easy
   sharing with others or with your own devices.
 
@@ -124,8 +126,12 @@ Alias (enter to skip):
 #### List saved commands
 ```
 $ pin ls
-0: ls --color=auto
-1: find ARG -name ARG
+ID      Command
+===============
+0       ls --color=auto
+        "List directory with color"
+1       find ARG -name ARG
+        "Search files in a directory"
 ```
 
 #### Describe a saved command
@@ -147,6 +153,34 @@ find <Enter Value>: .
 find . -name <Enter Value>: pin
 find . -name pin
 ./pin
+```
+
+#### Tagging a command
+`Pin` supports command tagging. To tag a command simply surround the tag word
+in description with `:`. For example, take a look here:
+```
+$ pin run find . -name cmd
+Save command [y/N]? y
+
+Command entered: (0)find (1). (2)-name (3)cmd
+Enter the indices from above command that are arguments (enter to skip): 1 3
+Command to be saved: find ARG -name ARG
+Short Description (enter to skip): Search files in a directory. :find:
+Created e3bcc45f033a67b6ed86a7aaadfdbb6de06502b0.
+Alias (enter to skip):
+```
+Run `pin tags` to see all the tags.
+```
+$ pin tags
+:find:
+```
+Use `pin grep` to search for commands tagged with this tag:
+```
+$ pin grep :find:
+ID      Command
+===============
+11      find . -name pin
+        "Search files in a directory. :find:"
 ```
 
 ## Importing and Exporting
