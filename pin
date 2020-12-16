@@ -187,16 +187,10 @@ function pin-exec() {
 }
 
 function pin-ls() {
-  i=0
-  for file in $(list-all-cmds); do
-    filename=$(basename $file)
-    label $i $filename
-    echo "$(tput bold) $(cat $file | jq -r .cmd) $(tput sgr0)"
-    if [ "$1" = "full" ]; then
-      pin-describe $i
-    fi
-    i=$((i+1))
-  done
+  jq -s . $(list-all-cmds) | jq 'to_entries' | \
+    jq -r '.[] | [.key, .value.cmd] | @csv' | \
+    awk -v FS="," 'BEGIN{print "ID\tName"; \
+    print "============"}{printf "%s\t\033[1m%s\033[0m%s",$1,substr($2, 2, length($2)-2),ORS}'
 }
 
 function pin-fork() {
@@ -337,21 +331,15 @@ function pin-describe {
 }
 
 function pin-grep {
-  i=0
-  for file in $(list-all-cmds); do
-    filename=$(basename $file)
-    cat $file | jq -r .cmd  | \
-      grep $@ -i --label="$(label $i $filename)" \
-      -H --color=auto 2>/dev/null
-    cat $file | jq -r .desc  | \
-      grep $@ -i --label="$(echo  "$(label $i $filename) ($(cat $file | jq -r .cmd))")  " \
-      -H --color=auto 2>/dev/null
-    i=$((i+1))
-  done
+  jq -s . $(list-all-cmds) | jq 'to_entries' | \
+    jq -r --arg filter $1 '.[] | select((.value.desc | contains($filter)) or (.value.cmd | contains($filter))) | [.key, .value.cmd, .value.desc] | @csv' | \
+    awk -v FS="," \
+    'BEGIN{print "ID\tText";print "============"} \
+    {printf "\033[1m%s\033[0m\t\033[1m%s\033[0m\n\t%s%s",$1,substr($2, 2, length($2)-2),$3,ORS}'
 }
 
 function pin-alias {
-  if [ "$#" != 2 ]; then
+  if [ "o$#" != 2 ]; then
     echo "Usage: $PROGNAME alias <command-id> <alias>"
     exit 1
   fi
