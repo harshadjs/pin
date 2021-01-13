@@ -268,7 +268,7 @@ function pin-save() {
   read description
   command="$(cat $cmdfile | xargs)"
   echo "{\"cmd\": \"${command}\", \"desc\": \"${description}\"}" | jq . > $cmdfile
-  id=$(echo $b | sha1sum - | cut -d " " -f1)
+  id=$(echo $command | sha1sum - | cut -d " " -f1)
   mv $cmdfile $CMDS_DIR/$id
   echo "Created $id."
   echo -n "Alias (enter to skip): "
