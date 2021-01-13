@@ -97,6 +97,8 @@ function pin-export() {
     exit 1
   fi
   sha1=$(basename $filename)
+  pin-describe $sha1
+  confirm "Export above command?" || return 0
   if [ "$2" = "b64" ]; then
     base64 $filename
   else
@@ -126,6 +128,7 @@ following:
    save         Save a new command (similar to run, except don't run)
    alias        Create alias for a saved command
    fork         Fork a command
+   create       Create a new command. (useful for saving scripts)
    sync         Sync your commands to your own comamands store
    generate-b64 Generate pin.tar.xz.base64 file
    install      Install pin
@@ -211,6 +214,17 @@ function pin-fork() {
   echo "Created $dest_filename"
 }
 
+function pin-create() {
+  if [ "$EDITOR" = "" ]; then
+    echo "\$EDITOR not set."
+    return
+  fi
+  $EDITOR ".new-cmd"
+  tr '\n' ';' < .new-cmd > .new-cmd-trimmed
+  rm .new-cmd
+  pin-save .new-cmd-trimmed
+}
+
 function pin-import() {
   if [ "$1" = "b64" ]; then
     echo "Text mode. Enter the string that you got from pin export-b64. Ctrl D to stop:"
@@ -230,9 +244,43 @@ function pin-import() {
     return 1
   fi
   sha1=$(cat $CMDS_DIR/new-import | jq -r .cmd | sha1sum - | cut -d " " -f1 2>/dev/null)
+  if [ -f $CMDS_DIR/$sha1 ]; then
+    echo "Command $sha1 exists."
+    new_desc=$(cat $CMDS_DIR/new-import | jq .desc -r)
+    pin-describe $sha1
+    echo "New description: \"$new_desc\""
+    confirm "Append description?"
+    if [ "$?" = "1" ]; then
+      rm $CMDS_DIR/new-import
+      return 0
+    fi
+    jq --arg arg ". $new_desc" '.desc+=$arg' $CMDS_DIR/$sha1 > $CMDS_DIR/new-import
+  fi
   mv $CMDS_DIR/new-import $CMDS_DIR/$sha1
   echo "Imported $sha1."
+  pin-describe $sha1
   return 0
+}
+
+function pin-save() {
+  cmdfile="$1"
+  echo -n "Short Description (enter to skip): "
+  read description
+  command="$(cat $cmdfile | xargs)"
+  echo "{\"cmd\": \"${command}\", \"desc\": \"${description}\"}" | jq . > $cmdfile
+  id=$(echo $b | sha1sum - | cut -d " " -f1)
+  mv $cmdfile $CMDS_DIR/$id
+  echo "Created $id."
+  echo -n "Alias (enter to skip): "
+  read alias
+  if [ "$alias" != "" ]; then
+    if [ $(echo $alias | wc -w) = "1" ]; then
+      ln -s $CMDS_DIR/$id $CMDS_DIR/$alias
+      echo "Create alias \"$alias\"."
+    else
+      echo "Error: alias can only be one word."
+    fi
+  fi
 }
 
 function pin-run() {
@@ -272,30 +320,20 @@ function pin-run() {
   for word in ${a[@]}; do
     b=$(echo -n "$b $word")
   done
-  b=$(echo $b | xargs)
+  echo "$b" > $TMP_CMD_FILE
   echo -e "Command to be saved: \033[0;33m$b\033[0m"
-  echo $b > $TMP_CMD_FILE
-
-  echo -n "Short Description (enter to skip): "
-  read description
-  if [ "$description" != "" ]; then
-    echo "## $description" >> $TMP_CMD_FILE
-  fi
-  echo "{\"cmd\": \"${b}\", \"desc\": \"${description}\"}" | jq . > $TMP_CMD_FILE
-  id=$(echo $b | sha1sum - | cut -d " " -f1)
-  mv $TMP_CMD_FILE $CMDS_DIR/$id
-  echo "Created $id."
-  echo -n "Alias (enter to skip): "
-  read alias
-  if [ "$alias" != "" ]; then
-    if [ $(echo $alias | wc -w) = "1" ]; then
-      ln -s $CMDS_DIR/$id $CMDS_DIR/$alias
-      echo "Create alias \"$alias\"."
-    else
-      echo "Error: alias can only be one word."
-    fi
-  fi
+  pin-save $TMP_CMD_FILE
   exit $rc
+}
+
+function confirm() {
+  echo -n "$1 [y/N]: "
+  read cnf
+  if [ "$cnf" != "y" -a "$cnf" != "Y" ]; then
+    echo "Cancelled."
+    return 1
+  fi
+  return 0
 }
 
 function pin-rm {
@@ -307,12 +345,7 @@ function pin-rm {
     return $?
   fi
   pin-describe $cmd
-  echo -n "Delete above command? [y/N]: "
-  read confirm
-  if [ "$confirm" != "y" -a "$confirm" != "Y" ]; then
-    echo "Nothing deleted."
-    return 0
-  fi
+  confirm "Delete above command?" || return 0
   rm $filename
   find $CMDS_DIR -xtype l -delete
   echo "Deleted."
@@ -393,6 +426,8 @@ elif [ "$1" = "fork" ]; then
   pin-fork $@
 elif [ "$1" = "install" ]; then
   pin-install
+elif [ "$1" = "create" ]; then
+  pin-create
 elif [ "$1" = "generate-b64" ]; then
   pin-generate-b64
 else
