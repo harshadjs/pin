@@ -67,7 +67,7 @@ fi
 
 ## Helper Functions ##
 function list-all-cmds() {
-    ls -t -r $CMDS_DIR/* 2>/dev/null | grep -v ".git"
+    ls $CMDS_DIR/* 2>/dev/null | sort | grep -v ".git"
 }
 
 function lookup-filename() {
@@ -168,36 +168,37 @@ function pin-exec() {
     fi
     pin-describe $(basename $filename)
     echo "Executing this command..."
-    saved=($(cat $filename | jq .cmd -r))
-    i=0
-    for word in ${saved[@]}; do
-	if [ "$word" = "ARG" ]; then
-	    if [ "$arg" = "0" ]; then
-		## print the start of the command only first time
-		echo -e "${saved[@]}"
+    while read line; do
+	saved=($line)
+	i=0
+	for word in ${saved[@]}; do
+	    if [ "$word" = "ARG" ]; then
+		if [ "$arg" = "0" ]; then
+		    ## print the start of the command only first time
+		    echo -e "${saved[@]}"
+		fi
+		echo -en "${saved[@]:0:$i} <Enter Value>: "
+		read var < /dev/tty
+		saved[$i]=$var
 	    fi
-	    arg=1
-	    echo -en "${saved[@]:0:$i} <Enter Value>: "
-	    read var
-	    saved[$i]=$var
-	fi
-	i=$((i+1))
-    done
-    echo -e "\033[7;32m${saved[@]}\033[0m"
-    eval ${saved[@]}
+	    i=$((i+1))
+	done
+	echo -e "\033[7;32m${saved[@]}\033[0m"
+	eval ${saved[@]}
+    done < <(cat $filename | jq -r .cmd)
     exit $?
 }
 
 function parse-cmd-out() {
     awk -v FS="," \
-	'BEGIN{print "ID\tCommand";print "==============="} \
-    {printf "\033[1m%s\033[0m\t\033[1m%s\033[0m\n\t%s%s",$1,substr($2, 2, length($2)-2),$3,ORS}'
+	'BEGIN{print "ID\tCommand";print "==============="}          \
+    	{printf "\033[1m%s\033[0m\t\033[1m%s\033[0m\n\t%s%s",        \
+	    substr($1,2,length($1)),substr($2,3,length($2)-4),substr($3,3,length($3)-5),ORS}'
 }
 
 function pin-ls() {
     jq -s . $(list-all-cmds) | jq 'to_entries' | \
-	jq -r '.[] | [.key, .value.cmd, .value.desc] | @csv' | \
-	parse-cmd-out
+	jq  '.[] | [.key, .value.cmd, .value.desc] | @csv' | parse-cmd-out
 }
 
 function pin-tags() {
@@ -227,9 +228,8 @@ function pin-create() {
 	return
     fi
     $EDITOR ".new-cmd"
-    tr '\n' ';' < .new-cmd > .new-cmd-trimmed
-    rm .new-cmd
-    pin-save .new-cmd-trimmed
+    sed 's/$/\\n/' .new-cmd | tr -d '\n' > .new-cmd-trimmed
+    pin-save .new-cmd-trimmed notrim
 }
 
 function pin-import() {
@@ -273,8 +273,12 @@ function pin-save() {
     cmdfile="$1"
     echo -n "Short Description (enter to skip): "
     read description
-    command="$(cat $cmdfile | xargs)"
-    echo "{\"cmd\": \"${command}\", \"desc\": \"${description}\"}" | jq . > $cmdfile
+    if [ "$2" = "notrim" ]; then
+	command="$(cat $cmdfile)"
+    else
+	command="$(cat $cmdfile | xargs)"
+    fi
+    echo -E """{\"cmd\": \"${command}\", \"desc\": \"${description}\"}""" | jq . > $cmdfile
     id=$(echo $command | sha1sum - | cut -d " " -f1)
     mv $cmdfile $CMDS_DIR/$id
     echo "Created $id."
@@ -344,7 +348,6 @@ function confirm() {
 }
 
 function pin-rm {
-    pin-ls
     cmd=$1
     filename=$(lookup-filename $cmd)
     if [ "$?" != "0" ]; then
@@ -370,7 +373,7 @@ function pin-describe {
 
 function pin-grep {
     jq -s . $(list-all-cmds) | jq 'to_entries' | \
-	jq -r --arg filter $1 \
+	jq --arg filter $1 \
 	   '.[] | select((.value.desc | contains($filter)) or (.value.cmd | contains($filter))) | [.key, .value.cmd, .value.desc] | @csv' | \
 	parse-cmd-out
 }
