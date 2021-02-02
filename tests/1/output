@@ -15,7 +15,6 @@ following:
    help         Print this usage
    desc         Describe a saved command
    save         Save a new command (similar to run, except don't run)
-   alias        Create alias for a saved command
    fork         Fork a command
    create       Create a new command. (useful for saving scripts)
    sync         Sync your commands to your own comamands store

@@ -4,8 +4,6 @@ Enter the indices from above command that are arguments (enter to skip):
 Command to be saved:  ls
 Short Description (enter to skip): 
 Created 023cc93272e5cbc11f128ffc90fbbe42f6f08d8c.
-Alias (enter to skip): 
-Create alias "ls".
 SHA1:		023cc93272e5cbc11f128ffc90fbbe42f6f08d8c
 Command:	ls
 Description:	List contents of dir

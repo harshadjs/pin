@@ -17,7 +17,7 @@ SYNC_SCRIPT=$REPO/pin-sync.sh
 SHA_PROG=""
 PIN_INPUT_LINE=1
 
-function pin-read-handler() {
+function pin-read() {
     if [ "$PIN_INPUT" != "" ]; then
 	val=$(echo '$(sed "${PIN_INPUT_LINE}q;d" $PIN_INPUT)')
 	eval $1=$val
@@ -35,7 +35,7 @@ function pin-install() {
     check-dependency jq || _fail "jq not found"
     check-dependency base64 || _fail "base64 not found"
     echo -n "Command store directory path ($HOME/.pin-db): "
-    pin-read-handler dir
+    pin-read dir
     if [ "$dir" = "" ]; then
 	dir="$HOME/.pin-db"
     fi
@@ -43,7 +43,7 @@ function pin-install() {
     echo CMDS_DIR=$dir > ${CFG}.tmp
     echo "HIDE_SHA1=true" >> ${CFG}.tmp
     echo -n "Which folder should it install into ($HOME/bin): "
-    pin-read-handler install_dir
+    pin-read install_dir
     if [ "$install_dir" = "" ]; then
 	install_dir="$HOME/bin"
     fi
@@ -145,7 +145,6 @@ following:
    help         Print this usage
    desc         Describe a saved command
    save         Save a new command (similar to run, except don't run)
-   alias        Create alias for a saved command
    fork         Fork a command
    create       Create a new command. (useful for saving scripts)
    sync         Sync your commands to your own comamands store
@@ -190,7 +189,7 @@ function pin-exec() {
 		    echo -e "${saved[@]}"
 		fi
 		echo -en "${saved[@]:0:$i} <Enter Value>: "
-		pin-read-handler var
+		pin-read var
 		saved[$i]=$var
 	    fi
 	    i=$((i+1))
@@ -291,7 +290,7 @@ function pin-import() {
 function pin-save() {
     cmdfile="$1"
     echo -n "Short Description (enter to skip): "
-    pin-read-handler description
+    pin-read description
     if [ "$2" = "notrim" ]; then
 	command="$(cat $cmdfile)"
     else
@@ -301,16 +300,6 @@ function pin-save() {
     id=$(echo $command | sha1sum - | cut -d " " -f1)
     mv $cmdfile $CMDS_DIR/$id
     echo "Created $id."
-    echo -n "Alias (enter to skip): "
-    pin-read-handler alias
-    if [ "$alias" != "" ]; then
-	if [ $(echo $alias | wc -w) = "1" ]; then
-	    ln -s $CMDS_DIR/$id $CMDS_DIR/$alias
-	    echo "Create alias \"$alias\"."
-	else
-	    echo "Error: alias can only be one word."
-	fi
-    fi
 }
 
 function pin-run() {
@@ -322,7 +311,7 @@ function pin-run() {
 	    exit $rc
 	fi
 	echo -n "Save command [y/N]? "
-	pin-read-handler save
+	pin-read save
 	if [ "$save" != "y" -a "$save" != "Y" ]; then
 	    exit $rc
 	fi
@@ -341,7 +330,7 @@ function pin-run() {
     done
     echo -e ""
     echo -n "Enter the indices from above command that are arguments (enter to skip): "
-    pin-read-handler args
+    pin-read args
     b=""
     for word in $args; do
 	a[$word]="ARG"
@@ -358,7 +347,7 @@ function pin-run() {
 
 function confirm() {
     echo -n "$1 [y/N]: "
-    pin-read-handler cnf
+    pin-read cnf
     if [ "$cnf" != "y" -a "$cnf" != "Y" ]; then
 	echo "Cancelled."
 	return 1
@@ -403,20 +392,7 @@ function pin-grep {
 	parse-cmd-out
 }
 
-function pin-alias {
-    if [ "o$#" != 2 ]; then
-	echo "Usage: $PROGNAME alias <command-id> <alias>"
-	exit 1
-    fi
-    filename=$(lookup-filename $1)
-    if [ "$?" != "0" ]; then
-	echo "Command not found."
-	exit 1
-    fi
-    ln -s $filename $CMDS_DIR/$2
-    echo "Created alias $2 for command $1"
-}
-
+## Should we use alternate config file?
 if [ "$PIN_CFG" != "" ]; then
     CFG=$PIN_CFG
 fi
@@ -462,9 +438,6 @@ elif [ "$1" = "desc" ]; then
 elif [ "$1" = "run" ]; then
     shift
     pin-run $@
-elif [ "$1" = "alias" ]; then
-    shift
-    pin-alias $@
 elif [ "$1" = "tags" ]; then
     shift
     pin-tags $@
