@@ -1,0 +1,5 @@
+#!/bin/bash
+
+rm -rf /tmp/.pin-db
+export PIN_CFG=$TMP/.pin
+$PIN_PROG

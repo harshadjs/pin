@@ -1,0 +1,27 @@
+Usage: pin COMMAND [ARGS]
+
+Pin helps you organize your commands. COMMAND can be one of the
+following:
+
+   ls           List all saved commands
+   run          Run a new or a saved command. If running a new command
+                also, ask the user the command should be saved
+   import       Import a command from URL
+   import-b64   Import a command as a base64 string
+   export       Export a command as a cl1p.net URL
+   export-b64   Export a command as a base64 string
+   rm           Remove a saved command
+   grep         Search for commands
+   help         Print this usage
+   desc         Describe a saved command
+   save         Save a new command (similar to run, except don't run)
+   alias        Create alias for a saved command
+   fork         Fork a command
+   create       Create a new command. (useful for saving scripts)
+   sync         Sync your commands to your own comamands store
+   generate-b64 Generate pin.tar.xz.base64 file
+   install      Install pin
+   tags         List all tags
+
+You can directly pass the index of the command or the SHA1 to run
+the command.

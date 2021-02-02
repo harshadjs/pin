@@ -1,0 +1,5 @@
+#!/bin/bash
+
+_setup
+
+$PIN_PROG

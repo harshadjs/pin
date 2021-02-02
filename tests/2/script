@@ -1,0 +1,6 @@
+#!/bin/bash
+
+_setup
+
+$PIN_PROG save ls
+$PIN_PROG desc 0
