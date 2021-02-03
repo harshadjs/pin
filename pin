@@ -8,63 +8,40 @@
 ## PIN_CFG=<filename>   Makes pin use alternate config file instead
 ##                      of ~/.pin
 
+## Global Constants
 REPO=$(dirname $BASH_SOURCE[0])
 PROGNAME="pin"
 CFG=~/.pin
 TMP_CMD_FILE=.cmd
-RUN_COMMAND=1
 SYNC_SCRIPT=$REPO/pin-sync.sh
-SHA_PROG=""
-PIN_INPUT_LINE=1
+URL_REGEX='(http|https|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
 
-function pin-read() {
+## Global Control Variables
+g_pin_input_line=1
+
+## Helper functions
+function _read() {
     if [ "$PIN_INPUT" != "" ]; then
-	val=$(echo '$(sed "${PIN_INPUT_LINE}q;d" $PIN_INPUT)')
+	val=$(echo '$(sed "${g_pin_input_line}q;d" $PIN_INPUT)')
 	eval $1=$val
-	PIN_INPUT_LINE=$((PIN_INPUT_LINE+1))
+	g_pin_input_line=$((g_pin_input_line+1))
 	echo ""
     else
 	read $1 < /dev/tty
     fi
 }
 
-function pin-install() {
-    echo "Welcome to $PROGNAME installation!"
-    check-dependency sha1sum || check-dependency shasum || \
-	_fail "sha1sum or shasum not found"
-    check-dependency jq || _fail "jq not found"
-    check-dependency base64 || _fail "base64 not found"
-    echo -n "Command store directory path ($HOME/.pin-db): "
-    pin-read dir
-    if [ "$dir" = "" ]; then
-	dir="$HOME/.pin-db"
+function _confirm() {
+    echo -n "$1 [y/N]: "
+    _read cnf
+    if [ "$cnf" != "y" -a "$cnf" != "Y" ]; then
+	echo "Cancelled."
+	return 1
     fi
-    mkdir -p $dir
-    echo CMDS_DIR=$dir > ${CFG}.tmp
-    echo "HIDE_SHA1=true" >> ${CFG}.tmp
-    echo -n "Which folder should it install into ($HOME/bin): "
-    pin-read install_dir
-    if [ "$install_dir" = "" ]; then
-	install_dir="$HOME/bin"
-    fi
-    if [ ! -d $install_dir ]; then
-	echo "Folder $install_dir not found. Exitting."
-	exit 1
-    fi
-    cp -i $BASH_SOURCE $install_dir
-    if [ "$?" != "0" ]; then
-	echo "Installation failed."
-	exit 1
-    fi
-    if [ -f $SYNC_SCRIPT ]; then
-	cp $SYNC_SCRIPT $install_dir
-    fi
-    echo "Ensure that $install_dir is in your PATH variable."
-    mv ${CFG}.tmp $CFG
-    echo "Done. Prefix any command by \"pin run\" to get started."
+    return 0
 }
 
-function check-dependency() {
+function _check_dependency() {
     command -v $1 > /dev/null
     if [ "$?" != "0" ]; then
 	return 1
@@ -77,18 +54,19 @@ function _fail() {
     exit 1
 }
 
-## Helper Functions ##
-function list-all-cmds() {
+function _list_all() {
     ls $CMDS_DIR/* 2>/dev/null | sort | grep -v ".git"
 }
 
-function lookup-filename() {
+## Lookup a command
+## $1:  SHA1 of the command
+function _lookup() {
     if [ -f $CMDS_DIR/$1 ]; then
 	echo $CMDS_DIR/$1
 	return 0
     fi
     i=0
-    for filename in $(list-all-cmds); do
+    for filename in $(_list_all); do
 	if [ "$i" = "$1" ]; then
 	    echo $filename
 	    return 0
@@ -98,35 +76,102 @@ function lookup-filename() {
     return 1
 }
 
-## Implementation of various subcommands
-function pin-sync() {
-    cd $CMDS_DIR
-    $SYNC_SCRIPT
-}
-
-function pin-generate-b64() {
-    tar -cz $BASH_SOURCE | base64 > $PROGNAME.tar.xz.base64
-    echo "$PROGNAME.tar.xz.base64 written."
-}
-
-function pin-export() {
-    filename=$(lookup-filename $1)
-    if [ "$?" != "0" ]; then
-	echo "Command not found."
-	exit 1
-    fi
-    sha1=$(basename $filename)
-    pin-describe $sha1
-    confirm "Export above command?" || return 0
-    if [ "$2" = "b64" ]; then
-	base64 $filename
+function _save() {
+    cmdfile="$1"
+    echo -n "Short Description (enter to skip): "
+    _read description
+    if [ "$2" = "notrim" ]; then
+	command="$(cat $cmdfile)"
     else
-	url=$(echo https://api.cl1p.net/$PROGNAME-$sha1-$(date +%s))
-	curl -H "Content-Type: text/html; charset=UTF-8" -X POST --data "$(base64 $filename)" $url
-	echo "Command exported at $url"
+	command="$(cat $cmdfile | xargs)"
+    fi
+    echo -E """{\"cmd\": \"${command}\", \"desc\": \"${description}\"}""" | jq . > $cmdfile
+    id=$(echo $command | sha1sum - | cut -d " " -f1)
+    mv $cmdfile $CMDS_DIR/$id
+    echo "Created $id."
+}
+
+function _parse_cmds() {
+    if [ "$COLOURED_OUTPUT" = "false" ]; then
+	awk -v FS=","		\
+	    '''BEGIN{
+		print "ID\tCommand";
+		print "==============="}
+		{
+			printf "%2s\t%.75s%s\n\t%s%s",
+				substr($1,2,length($1)),
+				substr($2,3,length($2)-4),
+				(length($2) > 70 ? "..." : "" ),
+				substr($3,3,length($3)-5),
+				ORS
+		}'''
+    else
+	awk -v FS=","		\
+	    '''BEGIN{
+		print "ID\tCommand";
+		print "==============="}
+		{
+			printf "\033[1m%2s\033[0m\t\033[1m%.75s%s\033[0m\n\t%s%s",
+				substr($1,2,length($1)),
+				substr($2,3,length($2)-4),
+				(length($2) > 70 ? "..." : "" ),
+				substr($3,3,length($3)-5),
+				ORS
+		}'''
     fi
 }
 
+## Execute a command by either the index, SHA1, URL or as is
+## $1:      Variable that will be set as 1 or 0 depending on whether
+##          the command that was passed, if that was a saved command
+##          or not
+## ${@:2}:  Command / URL / SHA1 / index
+function _exec() {
+    ## Check if this is SHA1 or index
+    ran_saved=$1
+    shift
+    filename=$(_lookup $1)
+    if [ "$?" != "0" ]; then
+	## Is it a url?
+	if ! [[ $1 =~ $URL_REGEX ]]; then
+	    ## Not a url, not a saved command, run as is.
+	    eval $ran_saved=0
+	    eval $@
+	    return $?
+	fi
+	pin-import $1
+	if [ "$?" != "0" ]; then
+	    return $?
+	fi
+	filename=$(echo $CMDS_DIR/$(basename $1 | cut -d "-" -f 2))
+    fi
+    pin-describe $(basename $filename)
+    eval $ran_saved=1
+    echo "Executing this command..."
+    while read line; do
+	tokens=($line)
+	i=0
+	for token in ${tokens[@]}; do
+	    if [ "$token" = "ARG" ]; then
+		if [ "$i" = "0" ]; then
+		    ## print the start of the command only first time
+		    echo -e "${tokens[@]}"
+		fi
+		echo -en "${tokens[@]:0:$i} <Enter Value>: "
+		_read var
+		tokens[$i]=$var
+	    fi
+	    i=$((i+1))
+	done
+	echo -e "$DARKGREENBG${tokens[@]}$STOP"
+	eval ${tokens[@]}
+    done < <(cat $filename | jq -r .cmd)
+    return $?
+}
+
+##
+## Handlers for subcommands
+##
 function pin-usage() {
     echo  """Usage: $PROGNAME COMMAND [ARGS]
 
@@ -156,71 +201,76 @@ You can directly pass the index of the command or the SHA1 to run
 the command."""
 }
 
-ran_saved=1
-
-## Execute a command by either the index, SHA1, alias, URL or as is
-function pin-exec() {
-    ## Check if this is SHA1 or alias
-    filename=$(lookup-filename $1)
-    if [ "$?" != "0" ]; then
-	url_regex='(http|https|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
-	if ! [[ $1 =~ $url_regex ]]; then
-	    ## Not running a saved command, so just run as is.
-	    ran_saved=0
-	    eval $@
-	    return $?
-	fi
-	## Try URL
-	pin-import $1
-	if [ "$?" != "0" ]; then
-	    return $?
-	fi
-	filename=$(echo $CMDS_DIR/$(basename $1 | cut -d "-" -f 2))
+function pin-install() {
+    echo "Welcome to $PROGNAME installation!"
+    _check_dependency sha1sum || _check_dependency shasum || \
+	_fail "sha1sum or shasum not found"
+    _check_dependency jq || _fail "jq not found"
+    _check_dependency base64 || _fail "base64 not found"
+    echo -n "Command store directory path ($HOME/.pin-db): "
+    _read dir
+    if [ "$dir" = "" ]; then
+	dir="$HOME/.pin-db"
     fi
-    pin-describe $(basename $filename)
-    echo "Executing this command..."
-    while read line; do
-	saved=($line)
-	i=0
-	for word in ${saved[@]}; do
-	    if [ "$word" = "ARG" ]; then
-		if [ "$arg" = "0" ]; then
-		    ## print the start of the command only first time
-		    echo -e "${saved[@]}"
-		fi
-		echo -en "${saved[@]:0:$i} <Enter Value>: "
-		pin-read var
-		saved[$i]=$var
-	    fi
-	    i=$((i+1))
-	done
-	echo -e "\033[7;32m${saved[@]}\033[0m"
-	eval ${saved[@]}
-    done < <(cat $filename | jq -r .cmd)
-    exit $?
+    mkdir -p $dir
+    echo CMDS_DIR=$dir > ${CFG}.tmp
+    echo "HIDE_SHA1=true" >> ${CFG}.tmp
+    echo -n "Which folder should it install into ($HOME/bin): "
+    _read install_dir
+    if [ "$install_dir" = "" ]; then
+	install_dir="$HOME/bin"
+    fi
+    if [ ! -d $install_dir ]; then
+	_fail "Folder $install_dir not found. Exitting."
+    fi
+    cp -i $BASH_SOURCE $install_dir
+    if [ "$?" != "0" ]; then
+	_fail "Installation failed."
+    fi
+    if [ -f $SYNC_SCRIPT ]; then
+	cp $SYNC_SCRIPT $install_dir
+    fi
+    echo "Ensure that $install_dir is in your PATH variable."
+    mv ${CFG}.tmp $CFG
+    echo "Done. Prefix any command by \"pin run\" to get started."
 }
 
-function parse-cmd-out() {
-    if [ $COLOURED_OUTPUT = "false" ]; then
-	awk -v FS="," \
-	    'BEGIN{print "ID\tCommand";print "==============="}          \
-  	      	{printf "%s\t\%s\n\t%s%s",        \
-		    substr($1,2,length($1)),substr($2,3,length($2)-4),substr($3,3,length($3)-5),ORS	}'
+function pin-sync() {
+    cd $CMDS_DIR
+    $SYNC_SCRIPT
+}
+
+function pin-generate-b64() {
+    tar -cz $BASH_SOURCE | base64 > $PROGNAME.tar.xz.base64
+    echo "$PROGNAME.tar.xz.base64 written."
+}
+
+function pin-export() {
+    filename=$(_lookup $1)
+    if [ "$?" != "0" ]; then
+	echo "Command not found."
+	return 1
+    fi
+    sha1=$(basename $filename)
+    pin-describe $sha1
+    _confirm "Export above command?" || return 0
+    if [ "$2" = "b64" ]; then
+	base64 $filename
     else
-	awk -v FS="," \
-	    'BEGIN{print "ID\tCommand";print "==============="}          \
-  	      	{printf "\033[1m%s\033[0m\t\033[1m%s\033[0m\n\t%s%s",        \
-		    substr($1,2,length($1)),substr($2,3,length($2)-4),substr($3,3,length($3)-5),ORS}'
+	url=$(echo https://api.cl1p.net/$PROGNAME-$sha1-$(date +%s))
+	curl -H "Content-Type: text/html; charset=UTF-8" -X POST --data "$(base64 $filename)" $url
+	echo "Command exported at $url"
     fi
 }
 
 function pin-ls() {
-    jq -s . $(list-all-cmds) | jq 'to_entries' | \
-	jq  '.[] | [.key, .value.cmd, .value.desc] | @csv' | parse-cmd-out
+    jq -s . $(_list_all) | jq 'to_entries' | \
+	jq  '.[] | [.key, .value.cmd, .value.desc] | @csv' | _parse_cmds
 }
 
 function pin-tags() {
-    grep -o ':\w*:' -R $CMDS_DIR -h --exclude-dir .git --color=auto | sort --unique
+    grep -o ':\w*:' -R $CMDS_DIR -h --exclude-dir .git --color=auto | \
+	sort --unique
 }
 
 function pin-fork() {
@@ -228,14 +278,16 @@ function pin-fork() {
 	echo "\$EDITOR not set."
 	return
     fi
-    filename=$(lookup-filename $1)
+
+    filename=$(_lookup $1)
     if [ "$?" != "0" ]; then
 	return
     fi
 
     cp $filename ${filename}.fork
     $EDITOR ${filename}.fork
-    dest_filename=$(cat ${filename}.fork | jq -r .cmd | sha1sum - | cut -d " " -f1 2>/dev/null)
+    dest_filename=$(cat ${filename}.fork | jq -r .cmd | sha1sum - | \
+			cut -d " " -f1 2>/dev/null)
     mv ${filename}.fork $CMDS_DIR/$dest_filename
     echo "Created $dest_filename"
 }
@@ -247,7 +299,8 @@ function pin-create() {
     fi
     $EDITOR ".new-cmd"
     sed 's/$/\\n/' .new-cmd | tr -d '\n' > .new-cmd-trimmed
-    pin-save .new-cmd-trimmed notrim
+    rm .new-cmd
+    _save .new-cmd-trimmed notrim
 }
 
 function pin-import() {
@@ -274,7 +327,7 @@ function pin-import() {
 	new_desc=$(cat $CMDS_DIR/new-import | jq .desc -r)
 	pin-describe $sha1
 	echo "New description: \"$new_desc\""
-	confirm "Append description?"
+	_confirm "Append description?"
 	if [ "$?" = "1" ]; then
 	    rm $CMDS_DIR/new-import
 	    return 0
@@ -288,38 +341,6 @@ function pin-import() {
 }
 
 function pin-save() {
-    cmdfile="$1"
-    echo -n "Short Description (enter to skip): "
-    pin-read description
-    if [ "$2" = "notrim" ]; then
-	command="$(cat $cmdfile)"
-    else
-	command="$(cat $cmdfile | xargs)"
-    fi
-    echo -E """{\"cmd\": \"${command}\", \"desc\": \"${description}\"}""" | jq . > $cmdfile
-    id=$(echo $command | sha1sum - | cut -d " " -f1)
-    mv $cmdfile $CMDS_DIR/$id
-    echo "Created $id."
-}
-
-function pin-run() {
-    if [ "$RUN_COMMAND" = "1" ]; then
-	ran_saved=1
-	pin-exec $@
-	rc=$?
-	if [ "$ran_saved" = "1" ]; then
-	    exit $rc
-	fi
-	echo -n "Save command [y/N]? "
-	pin-read save
-	if [ "$save" != "y" -a "$save" != "Y" ]; then
-	    exit $rc
-	fi
-    else
-	rc=0
-    fi
-
-    ## Save this command
     echo ""
     a=($(echo $@ | xargs))
     i=0
@@ -330,7 +351,7 @@ function pin-run() {
     done
     echo -e ""
     echo -n "Enter the indices from above command that are arguments (enter to skip): "
-    pin-read args
+    _read args
     b=""
     for word in $args; do
 	a[$word]="ARG"
@@ -341,38 +362,27 @@ function pin-run() {
     done
     echo "$b" > $TMP_CMD_FILE
     echo -e "Command to be saved: $YELLOW$b$STOP"
-    pin-save $TMP_CMD_FILE
-    exit $rc
-}
-
-function confirm() {
-    echo -n "$1 [y/N]: "
-    pin-read cnf
-    if [ "$cnf" != "y" -a "$cnf" != "Y" ]; then
-	echo "Cancelled."
-	return 1
-    fi
-    return 0
+    _save $TMP_CMD_FILE
 }
 
 function pin-rm {
     cmd=$1
-    filename=$(lookup-filename $cmd)
+    filename=$(_lookup $cmd)
     if [ "$?" != "0" ]; then
 	return $?
     fi
     pin-describe $cmd
-    confirm "Delete above command?" || return 0
+    _confirm "Delete above command?" || return 0
     rm $filename
     find $CMDS_DIR -xtype l -delete
     echo "Deleted."
 }
 
 function pin-describe {
-    filename=$(lookup-filename $1)
+    filename=$(_lookup $1)
     if [ "$?" != "0" ]; then
 	echo "Command not found."
-	exit 1
+	return 1
     fi
     if [ "$COLOURED_OUTPUT" != "false" ]; then
 	echo "SHA1:		$(tput bold)$(basename $filename)$(tput sgr0)"
@@ -386,78 +396,107 @@ function pin-describe {
 }
 
 function pin-grep {
-    jq -s . $(list-all-cmds) | jq 'to_entries' | \
+    jq -s . $(_list_all) | jq 'to_entries' | \
 	jq --arg filter $1 \
 	   '.[] | select((.value.desc | contains($filter)) or (.value.cmd | contains($filter))) | [.key, .value.cmd, .value.desc] | @csv' | \
-	parse-cmd-out
+	_parse_cmds
 }
 
-## Should we use alternate config file?
-if [ "$PIN_CFG" != "" ]; then
-    CFG=$PIN_CFG
-fi
 
-if [ ! -f $CFG ]; then
-    pin-install
-    exit 0
-fi
+function main() {
+    ## Should we use alternate config file?
+    if [ "$PIN_CFG" != "" ]; then
+	CFG=$PIN_CFG
+    fi
 
-. $CFG
+    if [ ! -f $CFG ]; then
+	pin-install
+	exit 0
+    fi
 
-if [ "$#" = "0" ]; then
-    pin-usage
-    exit 1
-fi
+    . $CFG
 
-if [ "$COLOURED_OUTPUT" != "false" ]; then
-    YELLOW="\033[0;33m"
-    STOP="\033[0m"
-fi
+    if [ "$#" = "0" ]; then
+	pin-usage
+	exit 1
+    fi
 
-if [ "$1" = "ls" ]; then
-    pin-ls
-elif [ "$1" = "rm" ]; then
-    shift
-    pin-rm $@
-elif [ "$1" = "sync" ]; then
-    pin-sync
-elif [ "$1" = "import" ]; then
-    pin-import $2
-elif [ "$1" = "import-b64" ]; then
-    pin-import $2 b64
-elif [ "$1" = "export" ]; then
-    pin-export $2
-elif [ "$1" = "export-b64" ]; then
-    pin-export $2 b64
-elif [ "$1" = "grep" ]; then
-    pin-grep $2
-elif [ "$1" = "help" ]; then
-    pin-usage
-elif [ "$1" = "desc" ]; then
-    pin-describe $2
-elif [ "$1" = "run" ]; then
-    shift
-    pin-run $@
-elif [ "$1" = "tags" ]; then
-    shift
-    pin-tags $@
-elif [ "$1" = "save" ]; then
-    RUN_COMMAND=0
-    shift
-    pin-run $@
-elif [ "$1" = "fork" ]; then
-    shift
-    pin-fork $@
-elif [ "$1" = "install" ]; then
-    pin-install
-elif [ "$1" = "create" ]; then
-    pin-create
-elif [ "$1" = "generate-b64" ]; then
-    pin-generate-b64
-elif [ "$1" = "test" ]; then
-    pin-test
-else
-    echo "Unknown command $1."
-    pin-usage
-    exit 1
-fi
+    if [ "$COLOURED_OUTPUT" != "false" ]; then
+	YELLOW="\033[0;33m"
+	DARKGREENBG="\033[7;32m"
+	STOP="\033[0m"
+    fi
+
+    case "$1" in
+	"ls")
+	    pin-ls
+	    ;;
+	"rm")
+	    shift
+	    pin-rm $@
+	    ;;
+	"sync")
+	    pin-sync
+	    ;;
+	"import")
+	    pin-import $2
+	    ;;
+	"import-b64")
+	    pin-import $2 b64
+	    ;;
+	"export")
+	    pin-export $2
+	    ;;
+	"export-b64")
+	    pin-export $2 b64
+	    ;;
+	"grep")
+	    pin-grep $2
+	    ;;
+	"help")
+	    pin-usage
+	    ;;
+	"desc" | "describe")
+	    pin-describe $2
+	    ;;
+	"run")
+	    shift
+	    _exec ran_saved $@
+	    rc=$?
+	    if [ "$ran_saved" = "1" ]; then
+		exit $rc
+	    fi
+	    echo -n "Save command [y/N]? "
+	    _read save
+	    if [ "$save" != "y" -a "$save" != "Y" ]; then
+		exit $rc
+	    fi
+	    ;;
+	"tags")
+	    shift
+	    pin-tags $@
+	    ;;
+	"save")
+	    shift
+	    pin-save $@
+	    ;;
+	"fork")
+	    shift
+	    pin-fork $@
+	    ;;
+	"install")
+	    pin-install
+	    ;;
+	"create")
+	    pin-create
+	    ;;
+	"generate-b64")
+	    pin-generate-b64
+	    ;;
+	*)
+	    echo "Unknown command $1."
+	    pin-usage
+    esac
+}
+
+main $@

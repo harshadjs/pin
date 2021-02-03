@@ -1,0 +1,7 @@
+#!/bin/bash
+
+_setup
+
+$PIN_PROG save echo test
+$PIN_PROG desc 0
+PIN_INPUT=$TESTDIR/pin-input.arg $PIN_PROG run 0
