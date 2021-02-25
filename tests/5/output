@@ -3,6 +3,7 @@ Command entered: (0)echo (1)test
 Enter the indices from above command that are arguments (enter to skip): 
 Command to be saved:  echo ARG
 Short Description (enter to skip): 
+Alias (enter to skip): 
 Created 895c914ce66c02d32d1b76bc8a3a6903e81eb524.
 SHA1:		895c914ce66c02d32d1b76bc8a3a6903e81eb524
 Command:	echo ARG

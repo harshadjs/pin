@@ -19,6 +19,7 @@ for test in $(ls tests | grep -v ".out"); do
     mkdir $TMPDIR/$test
     export TMP=$TMPDIR/$test
     export TESTDIR=tests/$test/
+    export PIN_ALIAS_FILE=tests/$test/pin-alias
     . tests/$test/script > tests/$test.out
 done
 

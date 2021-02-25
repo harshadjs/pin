@@ -2,4 +2,6 @@ Welcome to pin installation!
 Command store directory path (/usr/local/google/home/harshads/.pin-db): 
 Which folder should it install into (/usr/local/google/home/harshads/bin): 
 Ensure that /tmp/.pin-db is in your PATH variable.
+Add following line in your <sh>rc file for alias support:
+. tests/0/pin-alias 
 Done. Prefix any command by "pin run" to get started.

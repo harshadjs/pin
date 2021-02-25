@@ -3,6 +3,7 @@ Command entered: (0)echo (1)test
 Enter the indices from above command that are arguments (enter to skip): 
 Command to be saved:  echo test
 Short Description (enter to skip): 
+Alias (enter to skip): 
 Created f46cece3eeb7d9ed5cb244d902775427be71492d.
 SHA1:		f46cece3eeb7d9ed5cb244d902775427be71492d
 Command:	echo test

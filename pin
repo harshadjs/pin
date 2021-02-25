@@ -7,6 +7,8 @@
 ##                      <filename> whenever interactions are happening.
 ## PIN_CFG=<filename>   Makes pin use alternate config file instead
 ##                      of ~/.pin
+## PIN_USE_CACHED=1	Doesn't ask for user input whenever cached
+##			values are available
 
 ## Global Constants
 REPO=$(dirname $BASH_SOURCE[0])
@@ -15,9 +17,13 @@ CFG=~/.pin
 TMP_CMD_FILE=.cmd
 SYNC_SCRIPT=$REPO/pin-sync.sh
 URL_REGEX='(http|https|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
+CACHE=~/.pin-cache
+ALIAS_FILE=~/.pin-alias
 
 ## Global Control Variables
 g_pin_input_line=1
+g_pin_input_cached=0
+g_add_blob_tag=0
 
 ## Helper functions
 function _read() {
@@ -25,7 +31,20 @@ function _read() {
 	val=$(echo '$(sed "${g_pin_input_line}q;d" $PIN_INPUT)')
 	eval $1=$val
 	g_pin_input_line=$((g_pin_input_line+1))
-	echo ""
+	if [ "$g_pin_input_cached" != "0" ]; then
+	    eval c=\$$1
+	    echo -n [$c]
+	    if [ "$PIN_USE_CACHED" = "" ]; then
+		read newval < /dev/tty
+	    else
+		echo ""
+	    fi
+	    if [ "$newval" != "" ]; then
+		eval $1=$newval
+	    fi
+	else
+	    echo ""
+	fi
     else
 	read $1 < /dev/tty
     fi
@@ -55,7 +74,7 @@ function _fail() {
 }
 
 function _list_all() {
-    ls $CMDS_DIR/* 2>/dev/null | sort | grep -v ".git"
+    ls $CMDS_DIR/* -tr 2>/dev/null | grep -v ".git"
 }
 
 ## Lookup a command
@@ -85,8 +104,16 @@ function _save() {
     else
 	command="$(cat $cmdfile | xargs)"
     fi
+    echo -n "Alias (enter to skip): "
+    _read alias
+    if [ "$g_add_blob_tag" = "1" ]; then
+	description=$(echo "$description :blob:")
+    fi
     echo -E """{\"cmd\": \"${command}\", \"desc\": \"${description}\"}""" | jq . > $cmdfile
     id=$(echo $command | sha1sum - | cut -d " " -f1)
+    if [ "$alias" != "" ]; then
+	echo "alias ${alias}= \"pin run $id\"" >> $ALIAS_FILE
+    fi
     mv $cmdfile $CMDS_DIR/$id
     echo "Created $id."
 }
@@ -148,24 +175,36 @@ function _exec() {
     pin-describe $(basename $filename)
     eval $ran_saved=1
     echo "Executing this command..."
-    while read line; do
-	tokens=($line)
-	i=0
-	for token in ${tokens[@]}; do
-	    if [ "$token" = "ARG" ]; then
-		if [ "$i" = "0" ]; then
-		    ## print the start of the command only first time
-		    echo -e "${tokens[@]}"
-		fi
-		echo -en "${tokens[@]:0:$i} <Enter Value>: "
-		_read var
-		tokens[$i]=$var
+    line=$(cat $filename | jq -r .cmd)
+    tokens=($line)
+    i=0
+    if [ "$PIN_INPUT" = "" -a -f $CACHE/$(basename $filename) ]; then
+	g_pin_input_cached=1
+	g_pin_input_line=2
+	PIN_INPUT=$CACHE/$(basename $filename)
+    fi
+    cache_file=$(echo ${filename}.cache)
+    echo "" > $cache_file
+    for token in ${tokens[@]}; do
+	if [ "$token" = "ARG" ]; then
+	    if [ "$i" = "0" ]; then
+		## print the start of the command only first time
+		echo -e "${tokens[@]}"
 	    fi
-	    i=$((i+1))
-	done
-	echo -e "$DARKGREENBG${tokens[@]}$STOP"
-	eval ${tokens[@]}
-    done < <(cat $filename | jq -r .cmd)
+	    echo -en "${tokens[@]:0:$i} <Enter Value>: "
+	    _read var
+	    tokens[$i]=$var
+	    echo "$var" >> $cache_file
+	fi
+	i=$((i+1))
+    done
+    mv $cache_file $CACHE/$(basename $filename)
+    if [ "$g_pin_input_cached" = "1" ]; then
+	g_pin_input_cached=0
+	PIN_INPUT=""
+    fi
+    echo -e "$DARKGREENBG${tokens[@]}$STOP"
+    $WATCH eval ${tokens[@]}
     return $?
 }
 
@@ -214,7 +253,6 @@ function pin-install() {
     fi
     mkdir -p $dir
     echo CMDS_DIR=$dir > ${CFG}.tmp
-    echo "HIDE_SHA1=true" >> ${CFG}.tmp
     echo -n "Which folder should it install into ($HOME/bin): "
     _read install_dir
     if [ "$install_dir" = "" ]; then
@@ -232,6 +270,8 @@ function pin-install() {
     fi
     echo "Ensure that $install_dir is in your PATH variable."
     mv ${CFG}.tmp $CFG
+    echo "Add following line in your <sh>rc file for alias support:"
+    echo ". $ALIAS_FILE "
     echo "Done. Prefix any command by \"pin run\" to get started."
 }
 
@@ -264,6 +304,11 @@ function pin-export() {
 }
 
 function pin-ls() {
+    cnt=$(_list_all | wc -w)
+    if [ "$cnt" = "0" ]; then
+	return
+    fi
+    
     jq -s . $(_list_all) | jq 'to_entries' | \
 	jq  '.[] | [.key, .value.cmd, .value.desc] | @csv' | _parse_cmds
 }
@@ -298,9 +343,9 @@ function pin-create() {
 	return
     fi
     $EDITOR ".new-cmd"
-    sed 's/$/\\n/' .new-cmd | tr -d '\n' > .new-cmd-trimmed
-    rm .new-cmd
-    _save .new-cmd-trimmed notrim
+    #sed 's/$/\\n/' .new-cmd | tr -d '\n' > .new-cmd-trimmed
+    sed 's/$/;/' .new-cmd > .new-cmd-trimmed
+    _save .new-cmd-trimmed #notrim
 }
 
 function pin-import() {
@@ -365,6 +410,12 @@ function pin-save() {
     _save $TMP_CMD_FILE
 }
 
+function pin-save-blob() {
+    cat | base64 -w 0 > $TMP_CMD_FILE
+    g_add_blob_tag=1
+    _save $TMP_CMD_FILE notrim
+}
+
 function pin-rm {
     cmd=$1
     filename=$(_lookup $cmd)
@@ -395,6 +446,15 @@ function pin-describe {
     fi
 }
 
+function pin-read-blob {
+    filename=$(_lookup $1)
+    if [ "$?" != "0" ]; then
+	_fail "Blob not found."
+    fi
+    grep ":blob:" $filename > /dev/null || _fail "Not a blob"
+    cat $filename | jq -r .cmd | base64 -d
+}
+
 function pin-grep {
     jq -s . $(_list_all) | jq 'to_entries' | \
 	jq --arg filter $1 \
@@ -407,6 +467,13 @@ function main() {
     ## Should we use alternate config file?
     if [ "$PIN_CFG" != "" ]; then
 	CFG=$PIN_CFG
+    fi
+    if [ "$PIN_CACHE" != "" ]; then
+	CACHE=$PIN_CACHE
+    fi
+    mkdir -p $CACHE
+    if [ "$PIN_ALIAS_FILE" != "" ]; then
+	ALIAS_FILE=$PIN_ALIAS_FILE
     fi
 
     if [ ! -f $CFG ]; then
@@ -459,6 +526,9 @@ function main() {
 	"desc" | "describe")
 	    pin-describe $2
 	    ;;
+	"watch")
+	    WATCH=watch
+	    ;&
 	"run")
 	    shift
 	    _exec ran_saved $@
@@ -479,6 +549,13 @@ function main() {
 	"save")
 	    shift
 	    pin-save $@
+	    ;;
+	"save-blob")
+	    shift
+	    pin-save-blob
+	    ;;
+	"read-blob")
+	    pin-read-blob $2
 	    ;;
 	"fork")
 	    shift
