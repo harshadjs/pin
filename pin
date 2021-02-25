@@ -570,6 +570,9 @@ function main() {
 	"generate-b64")
 	    pin-generate-b64
 	    ;;
+	"export-all")
+	    tar --create 
+	    ;;
 	*)
 	    echo "Unknown command $1."
 	    pin-usage
