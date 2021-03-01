@@ -19,6 +19,7 @@ SYNC_SCRIPT=$REPO/pin-sync.sh
 URL_REGEX='(http|https|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
 CACHE=~/.pin-cache
 ALIAS_FILE=~/.pin-alias
+CL1P_NAMESPACE=harshads
 
 ## Global Control Variables
 g_pin_input_line=1
@@ -58,6 +59,12 @@ function _confirm() {
 	return 1
     fi
     return 0
+}
+
+function _upload_to_cl1p() {
+    filename=$1
+    url=$2
+    base64 $filename | curl -H "Content-Type: text/html; charset=UTF-8" -X POST --data-binary @- $url
 }
 
 function _check_dependency() {
@@ -112,7 +119,7 @@ function _save() {
     echo -E """{\"cmd\": \"${command}\", \"desc\": \"${description}\"}""" | jq . > $cmdfile
     id=$(echo $command | sha1sum - | cut -d " " -f1)
     if [ "$alias" != "" ]; then
-	echo "alias ${alias}= \"pin run $id\"" >> $ALIAS_FILE
+	echo "alias ${alias}=\"pin run $id\"" >> $ALIAS_FILE
     fi
     mv $cmdfile $CMDS_DIR/$id
     echo "Created $id."
@@ -297,8 +304,8 @@ function pin-export() {
     if [ "$2" = "b64" ]; then
 	base64 $filename
     else
-	url=$(echo https://api.cl1p.net/$PROGNAME-$sha1-$(date +%s))
-	curl -H "Content-Type: text/html; charset=UTF-8" -X POST --data "$(base64 $filename)" $url
+	url=$(echo https://api.cl1p.net/$PROGNAME-$CL1P_NAMESPACE-$sha1)
+	_upload_to_cl1p $filename $url
 	echo "Command exported at $url"
     fi
 }
@@ -462,7 +469,6 @@ function pin-grep {
 	_parse_cmds
 }
 
-
 function main() {
     ## Should we use alternate config file?
     if [ "$PIN_CFG" != "" ]; then
@@ -569,9 +575,6 @@ function main() {
 	    ;;
 	"generate-b64")
 	    pin-generate-b64
-	    ;;
-	"export-all")
-	    tar --create 
 	    ;;
 	*)
 	    echo "Unknown command $1."
