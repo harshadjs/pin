@@ -20,6 +20,35 @@ URL_REGEX='(http|https|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@
 CACHE=~/.pin-cache
 ALIAS_FILE=~/.pin-alias
 CL1P_NAMESPACE=harshads
+LS_OUTPUT_CACHE=/tmp/pin-ls-cache
+GREP_CACHE=/tmp/pin-grep-cache/
+
+## All possible commands
+ALL_COMMANDS=(
+    ls		## 0
+    rm		## 1
+    sync	## 2
+    i import	## 4
+    ib64 import-b64	## 6
+    e export	## 7 8
+    eb64 export-b64	## 9 10
+    grep	## 11
+    desc describe	## 12 13
+    watch	## 14
+    run		## 15
+    tags	## 16
+    dump	## 17
+    fork	## 18
+    install	## 19
+    generate-b64	## 20
+    sv save save-cmd	## 21 22 23
+    svb save-blob	## 24 25
+    svs save-script	## 26 27
+    cr create create-script	## 28 29 30
+    crb create-blob	## 31 32
+    crc create-cmd	## 33 34
+    cc clear-cache	## 35 36
+)
 
 ## Global Control Variables
 g_pin_input_line=1
@@ -27,6 +56,14 @@ g_pin_input_cached=0
 g_add_blob_tag=0
 
 ## Helper functions
+function _get_tmp_file() {
+    echo "/tmp/pin-$(date +%s)"
+}
+
+function _clear_caches() {
+    rm -rf $GREP_CACHE $LS_OUTPUT_CACHE
+}
+
 function _read() {
     if [ "$PIN_INPUT" != "" ]; then
 	val=$(echo '$(sed "${g_pin_input_line}q;d" $PIN_INPUT)')
@@ -102,57 +139,53 @@ function _lookup() {
     return 1
 }
 
-function _save() {
-    cmdfile="$1"
-    echo -n "Short Description (enter to skip): "
-    _read description
-    if [ "$2" = "notrim" ]; then
-	command="$(cat $cmdfile)"
-    else
-	command="$(cat $cmdfile | xargs)"
+function _print_cmd() {
+    echo -en "$CMD_ID\t"
+    if [ "$TYPE" = "cmd" ]; then
+	echo -ne "${NEW}$(echo $CMD | base64 -d - | head -c 80)"
+	len=$(echo $CMD | base64 -d - | wc -m)
+	if [ $len -ge 80 ]; then
+	    echo -n "..."
+	fi
+	echo -e "${STOP}"
+    elif [ "$TYPE" = "script" ]; then
+	echo -e "${YELLOW}<script>${STOP}"
+    elif [ "$TYPE" = "blob" ]; then
+	echo -e "${YELLOW}<blob>${STOP}"
     fi
-    echo -n "Alias (enter to skip): "
-    _read alias
-    if [ "$g_add_blob_tag" = "1" ]; then
-	description=$(echo "$description :blob:")
-    fi
-    echo -E """{\"cmd\": \"${command}\", \"desc\": \"${description}\"}""" | jq . > $cmdfile
-    id=$(echo $command | sha1sum - | cut -d " " -f1)
-    if [ "$alias" != "" ]; then
-	echo "alias ${alias}=\"pin run $id\"" >> $ALIAS_FILE
-    fi
-    mv $cmdfile $CMDS_DIR/$id
-    echo "Created $id."
+    echo -e "\t($DESC)"
+    echo ""
 }
 
-function _parse_cmds() {
-    if [ "$COLOURED_OUTPUT" = "false" ]; then
-	awk -v FS=","		\
-	    '''BEGIN{
-		print "ID\tCommand";
-		print "==============="}
-		{
-			printf "%2s\t%.75s%s\n\t%s%s",
-				substr($1,2,length($1)),
-				substr($2,3,length($2)-4),
-				(length($2) > 70 ? "..." : "" ),
-				substr($3,3,length($3)-5),
-				ORS
-		}'''
+function _print_hdr() {
+    echo -e "${BOLD}ID      Command${STOP}"
+    echo "==============="
+}
+
+function _save() {
+    _clear_caches
+
+    cmdfile="$1"
+    if [ "$2" = "cmd" ]; then
+	command="$(cat $cmdfile | xargs | base64 -w 0)"
     else
-	awk -v FS=","		\
-	    '''BEGIN{
-		print "ID\tCommand";
-		print "==============="}
-		{
-			printf "\033[1m%2s\033[0m\t\033[1m%.75s%s\033[0m\n\t%s%s",
-				substr($1,2,length($1)),
-				substr($2,3,length($2)-4),
-				(length($2) > 70 ? "..." : "" ),
-				substr($3,3,length($3)-5),
-				ORS
-		}'''
+	command="$(cat $cmdfile | base64 -w 0)"
     fi
+    id=$(echo $command | sha1sum - | cut -d " " -f1)
+    if [ -f $CMDS_DIR/$id ]; then
+	_confirm "Command exists. Overwrite?" || return 0
+    fi
+    echo -n "Short Description (enter to skip): "
+    _read description
+    echo -n "Alias (enter to skip): "
+    _read alias
+    if [ "$alias" != "" ]; then
+     	echo "alias ${alias}=\"pin run $id\"" >> $ALIAS_FILE
+    fi
+    echo "CMD=\"$command\"" > $CMDS_DIR/$id
+    echo "DESC=\"$description\"" >> $CMDS_DIR/$id
+    echo "TYPE=$2" >> $CMDS_DIR/$id
+    echo "Created $id."
 }
 
 ## Execute a command by either the index, SHA1, URL or as is
@@ -182,37 +215,49 @@ function _exec() {
     pin-describe $(basename $filename)
     eval $ran_saved=1
     echo "Executing this command..."
-    line=$(cat $filename | jq -r .cmd)
-    tokens=($line)
-    i=0
-    if [ "$PIN_INPUT" = "" -a -f $CACHE/$(basename $filename) ]; then
-	g_pin_input_cached=1
-	g_pin_input_line=2
-	PIN_INPUT=$CACHE/$(basename $filename)
-    fi
-    cache_file=$(echo ${filename}.cache)
-    echo "" > $cache_file
-    for token in ${tokens[@]}; do
-	if [ "$token" = "ARG" ]; then
-	    if [ "$i" = "0" ]; then
-		## print the start of the command only first time
-		echo -e "${tokens[@]}"
-	    fi
-	    echo -en "${tokens[@]:0:$i} <Enter Value>: "
-	    _read var
-	    tokens[$i]=$var
-	    echo "$var" >> $cache_file
+    . $filename
+    if [ "$TYPE" = "script" ]; then
+	TMP_CMD_FILE=$(_get_tmp_file)
+	echo $CMD | base64 -d - > $TMP_CMD_FILE
+	$WATCH bash $TMP_CMD_FILE
+	ret=$?
+	rm $TMP_CMD_FILE
+	return $ret
+    elif [ "$TYPE" = "blob" ]; then
+	echo "Can't run a blob"
+    else
+	line=$(echo $CMD | base64 -d -)
+	tokens=($line)
+	i=0
+	if [ "$PIN_INPUT" = "" -a -f $CACHE/$(basename $filename) ]; then
+	    g_pin_input_cached=1
+	    g_pin_input_line=2
+	    PIN_INPUT=$CACHE/$(basename $filename)
 	fi
-	i=$((i+1))
-    done
-    mv $cache_file $CACHE/$(basename $filename)
-    if [ "$g_pin_input_cached" = "1" ]; then
-	g_pin_input_cached=0
-	PIN_INPUT=""
+	cache_file=$(_get_tmp_file)
+	echo "" > $cache_file
+	for token in ${tokens[@]}; do
+	    if [ "$token" = "ARG" ]; then
+		if [ "$i" = "0" ]; then
+		    ## print the start of the command only first time
+		    echo -e "${tokens[@]}"
+		fi
+		echo -en "${tokens[@]:0:$i} <Enter Value>: "
+		_read var
+		tokens[$i]=$var
+		echo "$var" >> $cache_file
+	    fi
+	    i=$((i+1))
+	done
+	mv $cache_file $CACHE/$(basename $filename)
+	if [ "$g_pin_input_cached" = "1" ]; then
+	    g_pin_input_cached=0
+	    PIN_INPUT=""
+	fi
+	echo -e "$DARKGREENBG${tokens[@]}$STOP"
+	$WATCH eval ${tokens[@]}
+	return $?
     fi
-    echo -e "$DARKGREENBG${tokens[@]}$STOP"
-    $WATCH eval ${tokens[@]}
-    return $?
 }
 
 ##
@@ -224,34 +269,20 @@ function pin-usage() {
 Pin helps you organize your commands. COMMAND can be one of the
 following:
 
-   ls           List all saved commands
-   run          Run a new or a saved command. If running a new command
-                also, ask the user the command should be saved
-   import       Import a command from URL
-   import-b64   Import a command as a base64 string
-   export       Export a command as a cl1p.net URL
-   export-b64   Export a command as a base64 string
-   rm           Remove a saved command
-   grep         Search for commands
-   help         Print this usage
-   desc         Describe a saved command
-   save         Save a new command (similar to run, except don't run)
-   fork         Fork a command
-   create       Create a new command. (useful for saving scripts)
-   sync         Sync your commands to your own comamands store
-   generate-b64 Generate pin.tar.xz.base64 file
-   install      Install pin
-   tags         List all tags
-
 You can directly pass the index of the command or the SHA1 to run
-the command."""
+the command.
+"""
+
+    PIN_USAGE_MODE=1
+    for cmd in ${ALL_COMMANDS[@]}; do
+	pin-cmd-handler $cmd
+    done
 }
 
 function pin-install() {
     echo "Welcome to $PROGNAME installation!"
     _check_dependency sha1sum || _check_dependency shasum || \
 	_fail "sha1sum or shasum not found"
-    _check_dependency jq || _fail "jq not found"
     _check_dependency base64 || _fail "base64 not found"
     echo -n "Command store directory path ($HOME/.pin-db): "
     _read dir
@@ -311,13 +342,19 @@ function pin-export() {
 }
 
 function pin-ls() {
-    cnt=$(_list_all | wc -w)
-    if [ "$cnt" = "0" ]; then
-	return
+    CMD_ID=0
+
+    if [ ! -f "$LS_OUTPUT_CACHE" ]; then
+	echo "" > $LS_OUTPUT_CACHE
+	_print_hdr > $LS_OUTPUT_CACHE
+	for file in $(_list_all); do
+	    . $file
+	    _print_cmd >> $LS_OUTPUT_CACHE
+	    CMD_ID=$((CMD_ID+1))
+	done
     fi
-    
-    jq -s . $(_list_all) | jq 'to_entries' | \
-	jq  '.[] | [.key, .value.cmd, .value.desc] | @csv' | _parse_cmds
+
+    cat $LS_OUTPUT_CACHE | less
 }
 
 function pin-tags() {
@@ -335,13 +372,11 @@ function pin-fork() {
     if [ "$?" != "0" ]; then
 	return
     fi
-
-    cp $filename ${filename}.fork
-    $EDITOR ${filename}.fork
-    dest_filename=$(cat ${filename}.fork | jq -r .cmd | sha1sum - | \
-			cut -d " " -f1 2>/dev/null)
-    mv ${filename}.fork $CMDS_DIR/$dest_filename
-    echo "Created $dest_filename"
+    . $filename
+    TMP_CMD_FILE=$(_get_tmp_file)
+    echo "$CMD" | base64 -d - > $TMP_CMD_FILE
+    $EDITOR $TMP_CMD_FILE
+    _save $TMP_CMD_FILE $TYPE
 }
 
 function pin-create() {
@@ -349,46 +384,39 @@ function pin-create() {
 	echo "\$EDITOR not set."
 	return
     fi
-    $EDITOR ".new-cmd"
-    #sed 's/$/\\n/' .new-cmd | tr -d '\n' > .new-cmd-trimmed
-    sed 's/$/;/' .new-cmd > .new-cmd-trimmed
-    _save .new-cmd-trimmed #notrim
+    TMP_CMD_FILE=$(_get_tmp_file)
+    $EDITOR $TMP_CMD_FILE
+    _save $TMP_CMD_FILE $1
 }
 
 function pin-import() {
+    TMP_CMD_FILE=$(_get_tmp_file)
     if [ "$1" = "b64" ]; then
 	echo "Text mode. Enter the string that you got from pin export-b64. Ctrl D to stop:"
-	cat | base64 -d - > $CMDS_DIR/new-import
+	cat | base64 -d - > $TMP_CMD_FILE
     else
 	b64=$(curl $1)
 	if [ "$?" != "0" ]; then
 	    echo "Import failed."
 	    return 1
 	fi
-	echo "$b64" | base64 -d - > $CMDS_DIR/new-import
+	echo "$b64" | base64 -d - > $TMP_CMD_FILE
     fi
-    cmd=$(cat $CMDS_DIR/new-import | jq -r .cmd)
-    if [ "$cmd" = "" ]; then
+    . $TMP_CMD_FILE
+    if [ "$CMD" = "" ]; then
 	echo "No command imported."
-	rm $CMDS_DIR/new-import
+	rm $TMP_CMD_FILE
 	return 1
     fi
-    sha1=$(cat $CMDS_DIR/new-import | jq -r .cmd | sha1sum - | cut -d " " -f1 2>/dev/null)
+    sha1=$(echo $CMD | sha1sum - | cut -d " " -f1 2>/dev/null)
     if [ -f $CMDS_DIR/$sha1 ]; then
 	echo "Command $sha1 exists."
-	new_desc=$(cat $CMDS_DIR/new-import | jq .desc -r)
-	pin-describe $sha1
-	echo "New description: \"$new_desc\""
-	_confirm "Append description?"
-	if [ "$?" = "1" ]; then
-	    rm $CMDS_DIR/new-import
-	    return 0
-	fi
-	jq --arg arg ". $new_desc" '.desc+=$arg' $CMDS_DIR/$sha1 > $CMDS_DIR/new-import
+	return 0
     fi
-    mv $CMDS_DIR/new-import $CMDS_DIR/$sha1
+    mv $TMP_CMD_FILE $CMDS_DIR/$sha1
     echo "Imported $sha1."
     pin-describe $sha1
+    _clear_caches
     return 0
 }
 
@@ -397,6 +425,7 @@ function pin-save() {
     a=($(echo $@ | xargs))
     i=0
     echo -n "Command entered: "
+    TMP_CMD_FILE=$(_get_tmp_file)
     for word in ${a[@]}; do
 	echo -en "$YELLOW($i)$STOP$word "
 	i=$((i+1))
@@ -414,16 +443,34 @@ function pin-save() {
     done
     echo "$b" > $TMP_CMD_FILE
     echo -e "Command to be saved: $YELLOW$b$STOP"
-    _save $TMP_CMD_FILE
+    _save $TMP_CMD_FILE cmd
+    rm $TMP_CMD_FILE
 }
 
 function pin-save-blob() {
-    cat | base64 -w 0 > $TMP_CMD_FILE
-    g_add_blob_tag=1
-    _save $TMP_CMD_FILE notrim
+    TMP_CMD_FILE=$(_get_tmp_file)
+    if [ "$1" != "" ]; then
+	cat $1 > $TMP_CMD_FILE
+    else
+	cat > $TMP_CMD_FILE
+    fi
+    _save $TMP_CMD_FILE blob
+    rm $TMP_CMD_FILE
+}
+
+function pin-save-script() {
+    TMP_CMD_FILE=$(_get_tmp_file)
+    if [ "$1" != "" ]; then
+	cat $1 > $TMP_CMD_FILE
+    else
+	cat > $TMP_CMD_FILE
+    fi
+    _save $TMP_CMD_FILE script
+    rm $TMP_CMD_FILE
 }
 
 function pin-rm {
+    _clear_caches
     cmd=$1
     filename=$(_lookup $cmd)
     if [ "$?" != "0" ]; then
@@ -442,31 +489,248 @@ function pin-describe {
 	echo "Command not found."
 	return 1
     fi
-    if [ "$COLOURED_OUTPUT" != "false" ]; then
-	echo "SHA1:		$(tput bold)$(basename $filename)$(tput sgr0)"
-	echo "Command:	$(tput bold)$(cat $filename | jq -r .cmd)$(tput sgr0)"
-	echo "Description:	$(cat $filename | jq -r .desc)"
-    else
-	echo "SHA1:		$(basename $filename)"
-	echo "Command:	$(cat $filename | jq -r .cmd)"
-	echo "Description:	$(cat $filename | jq -r .desc)"
-    fi
+    . $filename
+
+    echo -e "SHA1:		${BOLD}$(basename $filename)${STOP}"
+    echo -e "Command:	${BOLD}$(echo $CMD | base64 -d -)${STOP}"
+    echo -e "Description:	$DESC"
 }
 
-function pin-read-blob {
+function pin-dump {
     filename=$(_lookup $1)
     if [ "$?" != "0" ]; then
-	_fail "Blob not found."
+	_fail "Object not found."
     fi
-    grep ":blob:" $filename > /dev/null || _fail "Not a blob"
-    cat $filename | jq -r .cmd | base64 -d
+    . $filename
+    echo $CMD | base64 -d -
 }
 
-function pin-grep {
-    jq -s . $(_list_all) | jq 'to_entries' | \
-	jq --arg filter $1 \
-	   '.[] | select((.value.desc | contains($filter)) or (.value.cmd | contains($filter))) | [.key, .value.cmd, .value.desc] | @csv' | \
-	_parse_cmds
+function pin-grep() {
+    CMD_ID=0
+    if [ -f $GREP_CACHE/$1 ]; then
+	cat $GREP_CACHE/$1
+	return
+    fi
+    mkdir -p $GREP_CACHE
+    _print_hdr > $GREP_CACHE/$1
+    for file in $(_list_all); do
+	. $file
+	echo "$(echo $CMD | base64 -d -) $DESC" | grep -i $1 > /dev/null
+	if [ "$?" = "0" ]; then
+	    _print_cmd  >> $GREP_CACHE/$1
+	fi
+	CMD_ID=$((CMD_ID+1))
+    done
+    cat $GREP_CACHE/$1
+}
+
+function pin-cmd-handler() {
+    case "$1" in
+	"${ALL_COMMANDS[0]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  ls\t\t\t\tList all commands"
+		return
+	    fi
+	    pin-ls
+	    ;;
+	"${ALL_COMMANDS[1]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  rm <cmd>\t\t\tRemove a specific command"
+		return
+	    fi
+	    shift
+	    pin-rm $@
+	    ;;
+	"${ALL_COMMANDS[2]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  sync\t\t\t\tSync commands"
+		return
+	    fi
+	    pin-sync
+	    ;;
+	"${ALL_COMMANDS[3]}" | "${ALL_COMMANDS[4]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[3]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[3]} | ${ALL_COMMANDS[4]} <url>\t\tImport a new command from url"
+		fi
+		return
+	    fi
+	    pin-import $2
+	    ;;
+	"${ALL_COMMANDS[5]}" | "${ALL_COMMANDS[6]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[5]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[5]} | ${ALL_COMMANDS[6]}\t\tImport a new command from base64 string"
+		fi
+		return
+	    fi
+	    pin-import $2 b64
+	    ;;
+	"${ALL_COMMANDS[7]}" | "${ALL_COMMANDS[8]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[7]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[7]} | ${ALL_COMMANDS[8]}\t\t\tExport a saved command as url"
+		fi
+		return
+	    fi
+	    pin-export $2
+	    ;;
+	"${ALL_COMMANDS[9]}" | "${ALL_COMMANDS[10]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[9]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[9]} | ${ALL_COMMANDS[10]}\t\tExport a saved command as a base64 encoded string"
+		fi
+		return
+	    fi
+	    pin-export $2 b64
+	    ;;
+	"${ALL_COMMANDS[11]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  grep <term>\t\t\tSearch commands matching the passed term"
+		return
+	    fi
+	    pin-grep $2
+	    ;;
+	"${ALL_COMMANDS[12]}" | "${ALL_COMMANDS[13]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[12]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[12]} | ${ALL_COMMANDS[13]} <cmd>\t\tDescribe a saved command"
+		fi
+		return
+	    fi
+	    pin-describe $2
+	    ;;
+	"${ALL_COMMANDS[14]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  watch <cmd>\t\t\tWatch a command"
+		return
+	    fi
+	    WATCH=watch
+	    ;&
+	"${ALL_COMMANDS[15]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  run <cmd>\t\t\tRun a command"
+		return
+	    fi
+	    shift
+	    _exec ran_saved $@
+	    rc=$?
+	    if [ "$ran_saved" = "1" ]; then
+		exit $rc
+	    fi
+	    echo -n "Save command [y/N]? "
+	    _read save
+	    if [ "$save" != "y" -a "$save" != "Y" ]; then
+		exit $rc
+	    fi
+	    ;;
+	"${ALL_COMMANDS[16]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  tags <cmd>\t\t\tShow all tags"
+		return
+	    fi
+	    shift
+	    pin-tags $@
+	    ;;
+	"${ALL_COMMANDS[17]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  dump <cmd>\t\t\tDump command / script or blob to stdout"
+		return
+	    fi
+	    pin-dump $2
+	    ;;
+	"${ALL_COMMANDS[18]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  fork <cmd>\t\t\tFork a command to create a new one"
+		return
+	    fi
+	    shift
+	    pin-fork $@
+	    ;;
+	"${ALL_COMMANDS[19]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  install\t\t\tInstall pin"
+		return
+	    fi
+	    pin-install
+	    ;;
+	"${ALL_COMMANDS[20]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  generate-b64\t\t\tGenerate pin base64 encoded package"
+		return
+	    fi
+	    pin-generate-b64
+	    ;;
+	"${ALL_COMMANDS[21]}" | "${ALL_COMMANDS[22]}" | "${ALL_COMMANDS[23]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[21]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[21]} | ${ALL_COMMANDS[22]}| ${ALL_COMMANDS[23]} <str>\tSave a new command"
+		fi
+		return
+	    fi
+	    shift
+	    pin-save $@
+	    ;;
+	"${ALL_COMMANDS[24]}" | "${ALL_COMMANDS[25]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[24]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[24]} | ${ALL_COMMANDS[25]}\t\tSave a new blob from stdin"
+		fi
+		return
+	    fi
+	    shift
+	    pin-save-blob $@
+	    ;;
+	"${ALL_COMMANDS[26]}" | "${ALL_COMMANDS[27]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[26]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[26]} | ${ALL_COMMANDS[27]}\t\tSave a new script from stdin"
+		fi
+		return
+	    fi
+	    shift
+	    pin-save-script $@
+	    ;;
+	"${ALL_COMMANDS[28]}" | "${ALL_COMMANDS[29]}" | "${ALL_COMMANDS[30]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[28]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[28]} | ${ALL_COMMANDS[29]}| ${ALL_COMMANDS[30]}\tOpen editor to create and save a new script"
+		fi
+		return
+	    fi
+	    pin-create script
+	    ;;
+	"${ALL_COMMANDS[31]}" | "${ALL_COMMANDS[32]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[31]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[31]} | ${ALL_COMMANDS[32]}\t\tOpen editor to create and save a new blob"
+		fi
+		return
+	    fi
+	    pin-create blob
+	    ;;
+	"${ALL_COMMANDS[33]}" | "${ALL_COMMANDS[34]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[33]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[33]} | ${ALL_COMMANDS[34]}\t\tOpen editor to create and save a new command"
+		fi
+		return
+	    fi
+	    pin-create cmd
+	    ;;
+	"${ALL_COMMANDS[35]}" | "${ALL_COMMANDS[36]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		if [ "$1" = "${ALL_COMMANDS[35]}" ]; then
+		    echo -e "  ${ALL_COMMANDS[35]} | ${ALL_COMMANDS[36]}\t\tClear all caches"
+		fi
+		return
+	    fi
+	    _clear_caches
+	    ;;
+	*)
+	    echo "Unknown command $1."
+	    pin-usage
+    esac
 }
 
 function main() {
@@ -497,89 +761,12 @@ function main() {
     if [ "$COLOURED_OUTPUT" != "false" ]; then
 	YELLOW="\033[0;33m"
 	DARKGREENBG="\033[7;32m"
+	BOLD="\033[1m"
+	NEW="\033[1;32m"
 	STOP="\033[0m"
     fi
-
-    case "$1" in
-	"ls")
-	    pin-ls
-	    ;;
-	"rm")
-	    shift
-	    pin-rm $@
-	    ;;
-	"sync")
-	    pin-sync
-	    ;;
-	"import")
-	    pin-import $2
-	    ;;
-	"import-b64")
-	    pin-import $2 b64
-	    ;;
-	"export")
-	    pin-export $2
-	    ;;
-	"export-b64")
-	    pin-export $2 b64
-	    ;;
-	"grep")
-	    pin-grep $2
-	    ;;
-	"help")
-	    pin-usage
-	    ;;
-	"desc" | "describe")
-	    pin-describe $2
-	    ;;
-	"watch")
-	    WATCH=watch
-	    ;&
-	"run")
-	    shift
-	    _exec ran_saved $@
-	    rc=$?
-	    if [ "$ran_saved" = "1" ]; then
-		exit $rc
-	    fi
-	    echo -n "Save command [y/N]? "
-	    _read save
-	    if [ "$save" != "y" -a "$save" != "Y" ]; then
-		exit $rc
-	    fi
-	    ;;
-	"tags")
-	    shift
-	    pin-tags $@
-	    ;;
-	"save")
-	    shift
-	    pin-save $@
-	    ;;
-	"save-blob")
-	    shift
-	    pin-save-blob
-	    ;;
-	"read-blob")
-	    pin-read-blob $2
-	    ;;
-	"fork")
-	    shift
-	    pin-fork $@
-	    ;;
-	"install")
-	    pin-install
-	    ;;
-	"create")
-	    pin-create
-	    ;;
-	"generate-b64")
-	    pin-generate-b64
-	    ;;
-	*)
-	    echo "Unknown command $1."
-	    pin-usage
-    esac
+    
+    pin-cmd-handler $@
 }
 
 main $@
