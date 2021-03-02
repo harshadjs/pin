@@ -26,6 +26,8 @@ $ curl https://raw.githubusercontent.com/harshadjs/pin/main/pin > pin; chmod +x 
 * `Pin` allows you to easily save any command by simply adding `pin run` as a
   prefix to any command that you would like to save.
 
+* `Pin` allows you to easily save scripts and run them as well.
+
 * `Pin` allows you to sync your commands using your own custom sync method.
   See [syncing](#syncing) for more details.
 
@@ -35,13 +37,15 @@ $ curl https://raw.githubusercontent.com/harshadjs/pin/main/pin > pin; chmod +x 
 
 * `Pin` allows you to export commands to [cl1p.net](http://cl1p.net) for easy
   sharing with others or with your own devices.
+  
+* `Pin` allows you to create simple aliases for your saved commands.
 
-*  Pin stores your favorite commands as self identifiable json objects in the
-   following simple format:
-   ```json
-   {
-      "cmd": "ls --color=tty",
-      "desc": "List directory with color"
+*  Pin stores your favorite commands as self identifiable shell
+   variables objects in the following simple format:
+   ```sh
+   CMD="<base64 encoding of ls --color=tty>",
+   DESC="List directory with color"
+   TYPE=cmd
    }
    ```
    These objects are identified by the `SHA1` sum of the command itself. This
@@ -129,9 +133,10 @@ $ pin ls
 ID      Command
 ===============
 0       ls --color=auto
-        "List directory with color"
+        (List directory with color)
+
 1       find ARG -name ARG
-        "Search files in a directory"
+        (Search files in a directory)
 ```
 
 #### Describe a saved command
@@ -180,7 +185,8 @@ $ pin grep :find:
 ID      Command
 ===============
 11      find . -name pin
-        "Search files in a directory. :find:"
+        (Search files in a directory. :find:)
+
 ```
 
 ## Importing and Exporting

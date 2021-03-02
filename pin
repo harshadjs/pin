@@ -48,6 +48,7 @@ ALL_COMMANDS=(
     crb create-blob	## 31 32
     crc create-cmd	## 33 34
     cc clear-cache	## 35 36
+    list-all		## 37
 )
 
 ## Global Control Variables
@@ -726,6 +727,13 @@ function pin-cmd-handler() {
 		return
 	    fi
 	    _clear_caches
+	    ;;
+	"${ALL_COMMANDS[37]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  list-all\t\t\tLists all supported commands"
+		return
+	    fi
+	    echo ${ALL_COMMANDS[@]}
 	    ;;
 	*)
 	    echo "Unknown command $1."
