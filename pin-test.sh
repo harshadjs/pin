@@ -21,6 +21,7 @@ for test in $(ls tests | grep -v ".out"); do
     export TESTDIR=tests/$test/
     export PIN_ALIAS_FILE=tests/$test/pin-alias
     . tests/$test/script > tests/$test.out
+    rm -f $PIN_ALIAS_FILE
 done
 
 for test in $(ls tests | grep -v ".out"); do

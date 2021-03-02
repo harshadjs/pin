@@ -3,24 +3,30 @@ Usage: pin COMMAND [ARGS]
 Pin helps you organize your commands. COMMAND can be one of the
 following:
 
-   ls           List all saved commands
-   run          Run a new or a saved command. If running a new command
-                also, ask the user the command should be saved
-   import       Import a command from URL
-   import-b64   Import a command as a base64 string
-   export       Export a command as a cl1p.net URL
-   export-b64   Export a command as a base64 string
-   rm           Remove a saved command
-   grep         Search for commands
-   help         Print this usage
-   desc         Describe a saved command
-   save         Save a new command (similar to run, except don't run)
-   fork         Fork a command
-   create       Create a new command. (useful for saving scripts)
-   sync         Sync your commands to your own comamands store
-   generate-b64 Generate pin.tar.xz.base64 file
-   install      Install pin
-   tags         List all tags
-
 You can directly pass the index of the command or the SHA1 to run
 the command.
+
+  ls				List all commands
+  rm <cmd>			Remove a specific command
+  sync				Sync commands
+  i | import <url>		Import a new command from url
+  ib64 | import-b64		Import a new command from base64 string
+  e | export			Export a saved command as url
+  eb64 | export-b64		Export a saved command as a base64 encoded string
+  grep <term>			Search commands matching the passed term
+  desc | describe <cmd>		Describe a saved command
+  watch <cmd>			Watch a command
+  run <cmd>			Run a command
+  tags <cmd>			Show all tags
+  dump <cmd>			Dump command / script or blob to stdout
+  fork <cmd>			Fork a command to create a new one
+  install			Install pin
+  generate-b64			Generate pin base64 encoded package
+  sv | save| save-cmd <str>	Save a new command
+  svb | save-blob		Save a new blob from stdin
+  svs | save-script		Save a new script from stdin
+  cr | create| create-script	Open editor to create and save a new script
+  crb | create-blob		Open editor to create and save a new blob
+  crc | create-cmd		Open editor to create and save a new command
+  cc | clear-cache		Clear all caches
+  list-all			Lists all supported commands

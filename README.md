@@ -43,10 +43,9 @@ $ curl https://raw.githubusercontent.com/harshadjs/pin/main/pin > pin; chmod +x 
 *  Pin stores your favorite commands as self identifiable shell
    variables objects in the following simple format:
    ```sh
-   CMD="<base64 encoding of ls --color=tty>",
+   CMD="<base64 encoding of ls --color=tty>"
    DESC="List directory with color"
    TYPE=cmd
-   }
    ```
    These objects are identified by the `SHA1` sum of the command itself. This
    means there is no command duplication and / or no accidental overwrites

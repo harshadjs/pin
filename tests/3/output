@@ -4,11 +4,11 @@ Enter the indices from above command that are arguments (enter to skip):
 Command to be saved:  echo test
 Short Description (enter to skip): 
 Alias (enter to skip): 
-Created f46cece3eeb7d9ed5cb244d902775427be71492d.
-SHA1:		f46cece3eeb7d9ed5cb244d902775427be71492d
+Created e39df5d6ccf320d41da348bd9bcc7a77ba8e0586.
+SHA1:		e39df5d6ccf320d41da348bd9bcc7a77ba8e0586
 Command:	echo test
 Description:	Echo test string
-SHA1:		f46cece3eeb7d9ed5cb244d902775427be71492d
+SHA1:		e39df5d6ccf320d41da348bd9bcc7a77ba8e0586
 Command:	echo test
 Description:	Echo test string
 Executing this command...

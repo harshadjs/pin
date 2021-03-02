@@ -4,11 +4,11 @@ Enter the indices from above command that are arguments (enter to skip):
 Command to be saved:  echo ARG
 Short Description (enter to skip): 
 Alias (enter to skip): 
-Created 895c914ce66c02d32d1b76bc8a3a6903e81eb524.
-SHA1:		895c914ce66c02d32d1b76bc8a3a6903e81eb524
+Created a1c64f7c3dcb58c5214d390367defc7602d78fa7.
+SHA1:		a1c64f7c3dcb58c5214d390367defc7602d78fa7
 Command:	echo ARG
 Description:	Echo a word
-SHA1:		895c914ce66c02d32d1b76bc8a3a6903e81eb524
+SHA1:		a1c64f7c3dcb58c5214d390367defc7602d78fa7
 Command:	echo ARG
 Description:	Echo a word
 Executing this command...
