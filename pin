@@ -24,7 +24,7 @@ GREP_CACHE=/tmp/pin-grep-cache/
 USAGE_CACHE=/tmp/pin-usage
 
 ## All possible commands
-ALL_COMMANDS=(
+ALLCMDS=(
     ls		## 0
     rm		## 1
     sync	## 2
@@ -54,6 +54,8 @@ ALL_COMMANDS=(
     show-config	## 40
     disable-cache	## 41
     enable-cache	## 42
+    self-upload		## 43
+    usage-full	## 44
 )
 
 ## Global Control Variables
@@ -70,7 +72,30 @@ function _get_clipboard_url() {
 }
 
 function _clear_caches() {
-    rm -rf $GREP_CACHE $LS_OUTPUT_CACHE $USAGE_CACHE
+    rm -rf $GREP_CACHE $LS_OUTPUT_CACHE $USAGE_CACHE*
+}
+
+function _cmd_usage_advanced() {
+    if [ "$PIN_USAGE_MODE" = "" ]; then
+	return 1
+    fi
+    if [ "$PIN_USAGE_MODE" != "advanced" ]; then
+	return 0
+    fi
+    if [ "$1" != "" ]; then
+	echo -e "   $1"
+    fi
+    return 0
+}
+
+function _cmd_usage_basic() {
+    if [ "$PIN_USAGE_MODE" = "" ]; then
+	return 1
+    fi
+    if [ "$1" != "" ]; then
+	echo -e "   $1"
+    fi
+    return 0
 }
 
 function _read() {
@@ -273,8 +298,9 @@ function _exec() {
 ## Handlers for subcommands
 ##
 function pin-usage() {
-    if [ -f $USAGE_CACHE ]; then
-	cat $USAGE_CACHE
+    PIN_USAGE_MODE=$1
+    if [ -f $USAGE_CACHE-$PIN_USAGE_MODE ]; then
+	cat $USAGE_CACHE-$PIN_USAGE_MODE
 	return
     fi
 
@@ -285,15 +311,14 @@ following:
 
 You can directly pass the index of the command or the SHA1 to run
 the command.
-""" > $USAGE_CACHE
+""" > $USAGE_CACHE-$PIN_USAGE_MODE
 
-    PIN_USAGE_MODE=1
-    for cmd in ${ALL_COMMANDS[@]}; do
-	pin-cmd-handler $cmd >> $USAGE_CACHE
+    for cmd in ${ALLCMDS[@]}; do
+	pin-cmd-handler $cmd >> $USAGE_CACHE-$PIN_USAGE_MODE
     done
-    cat $USAGE_CACHE
+    cat $USAGE_CACHE-$PIN_USAGE_MODE
     if [ "$DISABLE_CACHE" = "true" ]; then
-	rm $USAGE_CACHE
+	rm $USAGE_CACHE-$PIN_USAGE_MODE
     fi
 }
 
@@ -375,7 +400,7 @@ function pin-ls() {
 	done
     fi
 
-    cat $LS_OUTPUT_CACHE | less
+    cat $LS_OUTPUT_CACHE | less -r
     if [ "$DISABLE_CACHE" = "true" ]; then
 	rm $LS_OUTPUT_CACHE
     fi
@@ -569,92 +594,64 @@ function pin-paste() {
 
 function pin-cmd-handler() {
     case "$1" in
-	"${ALL_COMMANDS[0]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  ls\t\t\t\tList all commands"
-		return
-	    fi
+	"${ALLCMDS[0]}")
+	    _cmd_usage_basic "ls\t\t\t\tList all commands" && return
 	    pin-ls
 	    ;;
-	"${ALL_COMMANDS[1]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  rm <cmd>\t\t\tRemove a specific command"
-		return
-	    fi
+	"${ALLCMDS[1]}")
+	    _cmd_usage_basic "rm <cmd>\t\t\tRemove a specific command" && return
 	    shift
 	    pin-rm $@
 	    ;;
-	"${ALL_COMMANDS[2]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  sync\t\t\t\tSync commands"
-		return
-	    fi
+	"${ALLCMDS[2]}")
+	    _cmd_usage_basic "sync\t\t\t\tSync commands" && return
 	    pin-sync
 	    ;;
-	"${ALL_COMMANDS[3]}" | "${ALL_COMMANDS[4]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[3]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[3]} | ${ALL_COMMANDS[4]} <url>\t\tImport a new command from url"
-		fi
-		return
-	    fi
+	"${ALLCMDS[3]}")
+	    _cmd_usage_basic "${ALLCMDS[3]} | ${ALLCMDS[4]} <url>\t\tImport a new command from url" && return
+	    ;&
+	"${ALLCMDS[4]}")
+	    _cmd_usage_basic && return 
 	    pin-import $2
 	    ;;
-	"${ALL_COMMANDS[5]}" | "${ALL_COMMANDS[6]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[5]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[5]} | ${ALL_COMMANDS[6]}\t\tImport a new command from base64 string"
-		fi
-		return
-	    fi
+	"${ALLCMDS[5]}")
+	    _cmd_usage_advanced "${ALLCMDS[5]} | ${ALLCMDS[6]}\t\tImport a new command from base64 string" && return
+	    ;&
+	"${ALLCMDS[6]}")
+	    _cmd_usage_basic && return 
 	    pin-import $2 b64
 	    ;;
-	"${ALL_COMMANDS[7]}" | "${ALL_COMMANDS[8]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[7]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[7]} | ${ALL_COMMANDS[8]}\t\t\tExport a saved command as url"
-		fi
-		return
-	    fi
+	"${ALLCMDS[7]}")
+	    _cmd_usage_basic "${ALLCMDS[7]} | ${ALLCMDS[8]}\t\t\tExport a saved command as url" && return
+	    ;&
+	"${ALLCMDS[8]}")
+	    _cmd_usage_basic && return 
 	    pin-export $2
 	    ;;
-	"${ALL_COMMANDS[9]}" | "${ALL_COMMANDS[10]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[9]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[9]} | ${ALL_COMMANDS[10]}\t\tExport a saved command as a base64 encoded string"
-		fi
-		return
-	    fi
+	"${ALLCMDS[9]}")
+	    _cmd_usage_advanced "${ALLCMDS[9]} | ${ALLCMDS[10]}\t\tExport a saved command as a base64 encoded string" && return
+	    ;&
+	"${ALLCMDS[10]}")
+	    _cmd_usage_basic && return 
 	    pin-export $2 b64
 	    ;;
-	"${ALL_COMMANDS[11]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  grep <term>\t\t\tSearch commands matching the passed term"
-		return
-	    fi
+	"${ALLCMDS[11]}")
+	    _cmd_usage_basic "grep <term>\t\t\tSearch commands matching the passed term" && return
 	    pin-grep $2
 	    ;;
-	"${ALL_COMMANDS[12]}" | "${ALL_COMMANDS[13]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[12]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[12]} | ${ALL_COMMANDS[13]} <cmd>\t\tDescribe a saved command"
-		fi
-		return
-	    fi
+	"${ALLCMDS[12]}")
+	    _cmd_usage_basic "${ALLCMDS[12]} | ${ALLCMDS[13]} <cmd>\tDescribe a saved command" && return
+	    ;&
+	"${ALLCMDS[13]}")
+	    _cmd_usage_basic && return
 	    pin-describe $2
 	    ;;
-	"${ALL_COMMANDS[14]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  watch <cmd>\t\t\tWatch a command"
-		return
-	    fi
+	"${ALLCMDS[14]}")
+	    _cmd_usage_basic "watch <cmd>\t\t\tWatch a command" && return
 	    WATCH=watch
 	    ;&
-	"${ALL_COMMANDS[15]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  run <cmd>\t\t\tRun a command"
-		return
-	    fi
+	"${ALLCMDS[15]}")
+	    _cmd_usage_basic "run <cmd>\t\t\tRun a command" && return
 	    shift
 	    _exec ran_saved $@
 	    rc=$?
@@ -667,160 +664,125 @@ function pin-cmd-handler() {
 		exit $rc
 	    fi
 	    ;;
-	"${ALL_COMMANDS[16]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  tags <cmd>\t\t\tShow all tags"
-		return
-	    fi
+	"${ALLCMDS[16]}")
+	    _cmd_usage_basic "tags <cmd>\t\t\tShow all tags" && return
 	    shift
 	    pin-tags $@
 	    ;;
-	"${ALL_COMMANDS[17]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  dump <cmd>\t\t\tDump command / script or blob to stdout"
-		return
-	    fi
+	"${ALLCMDS[17]}")
+	    _cmd_usage_basic "dump <cmd>\t\t\tDump command / script or blob to stdout" && return
 	    pin-dump $2
 	    ;;
-	"${ALL_COMMANDS[18]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  fork <cmd>\t\t\tFork a command to create a new one"
-		return
-	    fi
+	"${ALLCMDS[18]}")
+	    _cmd_usage_basic "fork <cmd>\t\t\tFork a command to create a new one" && return
 	    shift
 	    pin-fork $@
 	    ;;
-	"${ALL_COMMANDS[19]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  install\t\t\tInstall pin"
-		return
-	    fi
+	"${ALLCMDS[19]}")
+	    _cmd_usage_advanced "install\t\t\tInstall pin" && return
 	    pin-install
 	    ;;
-	"${ALL_COMMANDS[20]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  generate-b64\t\t\tGenerate pin base64 encoded package"
-		return
-	    fi
+	"${ALLCMDS[20]}")
+	    _cmd_usage_advanced "generate-b64\t\t\tGenerate pin base64 encoded package" && return
 	    pin-generate-b64
 	    ;;
-	"${ALL_COMMANDS[21]}" | "${ALL_COMMANDS[22]}" | "${ALL_COMMANDS[23]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[21]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[21]} | ${ALL_COMMANDS[22]}| ${ALL_COMMANDS[23]} <str>\tSave a new command"
-		fi
-		return
-	    fi
+	"${ALLCMDS[21]}")
+	    _cmd_usage_basic "${ALLCMDS[21]} | ${ALLCMDS[22]}| ${ALLCMDS[23]} <str>\tSave a new command" && return
+	    ;&
+	"${ALLCMDS[22]}" | "${ALLCMDS[23]}")
+	    _cmd_usage_basic && return
 	    shift
 	    pin-save $@
 	    ;;
-	"${ALL_COMMANDS[24]}" | "${ALL_COMMANDS[25]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[24]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[24]} | ${ALL_COMMANDS[25]}\t\tSave a new blob from stdin"
-		fi
-		return
-	    fi
+	"${ALLCMDS[24]}")
+	    _cmd_usage_basic "${ALLCMDS[24]} | ${ALLCMDS[25]}\t\tSave a new blob from stdin" && return
+	    ;&
+	"${ALLCMDS[25]}")
+	    _cmd_usage_basic && return
 	    shift
 	    pin-save-blob $@
 	    ;;
-	"${ALL_COMMANDS[26]}" | "${ALL_COMMANDS[27]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[26]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[26]} | ${ALL_COMMANDS[27]}\t\tSave a new script from stdin"
-		fi
-		return
-	    fi
+	"${ALLCMDS[26]}")
+	    _cmd_usage_basic "${ALLCMDS[26]} | ${ALLCMDS[27]}\t\tSave a new script from stdin" && return
+	    ;&
+	"${ALLCMDS[27]}")
+	    _cmd_usage_basic && return
 	    shift
 	    pin-save-script $@
 	    ;;
-	"${ALL_COMMANDS[28]}" | "${ALL_COMMANDS[29]}" | "${ALL_COMMANDS[30]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[28]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[28]} | ${ALL_COMMANDS[29]}| ${ALL_COMMANDS[30]}\tOpen editor to create and save a new script"
-		fi
-		return
-	    fi
+	"${ALLCMDS[28]}")
+	    _cmd_usage_basic "${ALLCMDS[28]} | ${ALLCMDS[29]}| ${ALLCMDS[30]}\tOpen editor to create and save a new script" && return
+	    ;&
+	"${ALLCMDS[29]}" | "${ALLCMDS[30]}")
+	    _cmd_usage_basic && return
 	    pin-create script
 	    ;;
-	"${ALL_COMMANDS[31]}" | "${ALL_COMMANDS[32]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[31]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[31]} | ${ALL_COMMANDS[32]}\t\tOpen editor to create and save a new blob"
-		fi
-		return
-	    fi
+	"${ALLCMDS[31]}")
+	    _cmd_usage_basic "${ALLCMDS[31]} | ${ALLCMDS[32]}\t\tOpen editor to create and save a new blob" && return
+	    ;&
+	"${ALLCMDS[32]}")
+	    _cmd_usage_basic && return
 	    pin-create blob
 	    ;;
-	"${ALL_COMMANDS[33]}" | "${ALL_COMMANDS[34]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[33]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[33]} | ${ALL_COMMANDS[34]}\t\tOpen editor to create and save a new command"
-		fi
-		return
-	    fi
+	"${ALLCMDS[33]}")
+	    _cmd_usage_basic "${ALLCMDS[33]} | ${ALLCMDS[34]}\t\tOpen editor to create and save a new command" && return
+	    ;&
+	"${ALLCMDS[34]}")
+	    _cmd_usage_basic && return
 	    pin-create cmd
 	    ;;
-	"${ALL_COMMANDS[35]}" | "${ALL_COMMANDS[36]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		if [ "$1" = "${ALL_COMMANDS[35]}" ]; then
-		    echo -e "  ${ALL_COMMANDS[35]} | ${ALL_COMMANDS[36]}\t\tClear all caches"
-		fi
-		return
-	    fi
+	"${ALLCMDS[35]}")
+	    _cmd_usage_advanced "${ALLCMDS[35]} | ${ALLCMDS[36]}\t\tClear all caches" && return
+	    ;&
+	"${ALLCMDS[36]}")
+	    _cmd_usage_advanced && return
 	    _clear_caches
 	    ;;
-	"${ALL_COMMANDS[37]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  list-all\t\t\tLists all supported commands"
-		return
-	    fi
-	    echo ${ALL_COMMANDS[@]}
+	"${ALLCMDS[37]}")
+	    _cmd_usage_advanced "list-all\t\t\tLists all supported commands" && return
+	    echo ${ALLCMDS[@]}
 	    ;;
-	"${ALL_COMMANDS[38]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  copy\t\t\t\tCopy from stdin to cl1p.net"
-		return
-	    fi
+	"${ALLCMDS[38]}")
+	    _cmd_usage_basic "copy\t\t\t\tCopy from stdin to cl1p.net" && return 
 	    pin-copy
 	    ;;
-	"${ALL_COMMANDS[39]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  paste\t\t\t\tPaste from cl1p.net to stdout"
-		return
-	    fi
+	"${ALLCMDS[39]}")
+	    _cmd_usage_basic "paste\t\t\tPaste from cl1p.net to stdout" && return
 	    pin-paste
 	    ;;
-	"${ALL_COMMANDS[40]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  show-config\t\t\tPrint config file"
-		return
-	    fi
+	"${ALLCMDS[40]}")
+	    _cmd_usage_advanced "show-config\t\t\tPrint config file" && return
 	    cat $CFG
 	    ;;
-	"${ALL_COMMANDS[41]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  disable-cache\t\t\tDisable output caching. This may result in slow outputs."
-		return
-	    fi
+	"${ALLCMDS[41]}")
+	    _cmd_usage_advanced "disable-cache\t\tDisable output caching. This may result in slow outputs." && return
 	    echo "DISABLE_CACHE=true" >> $CFG
 	    TMP_CMD_FILE=$(_get_tmp_file)
 	    cat $CFG | sort -u > $TMP_CMD_FILE
 	    mv $TMP_CMD_FILE $CFG
 	    _clear_caches
 	    ;;
-	"${ALL_COMMANDS[42]}")
-	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  enable-cache\t\t\tEnable output caching."
-		return
-	    fi
+	"${ALLCMDS[42]}")
+	    _cmd_usage_advanced "enable-cache\t\t\tEnable output caching." && return
 	    TMP_CMD_FILE=$(_get_tmp_file)
 	    cat $CFG | grep -v "DISABLE_CACHE" > $TMP_CMD_FILE
 	    mv $TMP_CMD_FILE $CFG
 	    ;;
+	"${ALLCMDS[43]}")
+	    _cmd_usage_advanced "self-upload\t\t\tUpload this program to cl1p. Useful for setting up on new machines" && return
+	    TMP_CMD_FILE=$(_get_tmp_file)
+	    cat $BASH_SOURCE | pin-copy
+	    echo -e "Run following command on the remote machine to get started:\n"
+	    echo "curl -s $(_get_clipboard_url) | base64 -d - > pin; chmod +x pin"
+	    ;;
+	"${ALLCMDS[44]}")
+	    _cmd_usage_basic "usage-full\t\t\tFull usage with advanced commands" && return
+	    
+	    pin-usage advanced
+	    ;;
 	*)
 	    echo "Unknown command $1."
-	    pin-usage
+	    pin-usage basic
     esac
 }
 
@@ -845,7 +807,7 @@ function main() {
     . $CFG
 
     if [ "$#" = "0" ]; then
-	pin-usage
+	pin-usage basic
 	exit 1
     fi
 
