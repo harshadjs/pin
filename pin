@@ -786,7 +786,7 @@ function pin-cmd-handler() {
 	    ;;
 	"${ALL_COMMANDS[39]}")
 	    if [ "$PIN_USAGE_MODE" = "1" ]; then
-		echo -e "  list-all\t\t\tPaste from cl1p.net to stdout"
+		echo -e "  paste\t\t\t\tPaste from cl1p.net to stdout"
 		return
 	    fi
 	    pin-paste
