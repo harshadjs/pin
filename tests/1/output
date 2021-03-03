@@ -30,3 +30,8 @@ the command.
   crc | create-cmd		Open editor to create and save a new command
   cc | clear-cache		Clear all caches
   list-all			Lists all supported commands
+  copy				Copy from stdin to cl1p.net
+  list-all			Paste from cl1p.net to stdout
+  show-config			Print config file
+  disable-cache			Disable output caching. This may result in slow outputs.
+  enable-cache			Enable output caching.

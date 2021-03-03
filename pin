@@ -19,9 +19,9 @@ SYNC_SCRIPT=$REPO/pin-sync.sh
 URL_REGEX='(http|https|ftp|file)://[-A-Za-z0-9\+&@#/%?=~_|!:,.;]*[-A-Za-z0-9\+&@#/%=~_|]'
 CACHE=~/.pin-cache
 ALIAS_FILE=~/.pin-alias
-CL1P_NAMESPACE=harshads
 LS_OUTPUT_CACHE=/tmp/pin-ls-cache
 GREP_CACHE=/tmp/pin-grep-cache/
+USAGE_CACHE=/tmp/pin-usage
 
 ## All possible commands
 ALL_COMMANDS=(
@@ -49,20 +49,28 @@ ALL_COMMANDS=(
     crc create-cmd	## 33 34
     cc clear-cache	## 35 36
     list-all		## 37
+    copy	## 38
+    paste	## 39
+    show-config	## 40
+    disable-cache	## 41
+    enable-cache	## 42
 )
 
 ## Global Control Variables
 g_pin_input_line=1
 g_pin_input_cached=0
-g_add_blob_tag=0
 
 ## Helper functions
 function _get_tmp_file() {
     echo "/tmp/pin-$(date +%s)"
 }
 
+function _get_clipboard_url() {
+    echo "https://api.cl1p.net/$PROGNAME-$CL1P_NAMESPACE-clipboard"
+}
+
 function _clear_caches() {
-    rm -rf $GREP_CACHE $LS_OUTPUT_CACHE
+    rm -rf $GREP_CACHE $LS_OUTPUT_CACHE $USAGE_CACHE
 }
 
 function _read() {
@@ -265,6 +273,11 @@ function _exec() {
 ## Handlers for subcommands
 ##
 function pin-usage() {
+    if [ -f $USAGE_CACHE ]; then
+	cat $USAGE_CACHE
+	return
+    fi
+
     echo  """Usage: $PROGNAME COMMAND [ARGS]
 
 Pin helps you organize your commands. COMMAND can be one of the
@@ -272,12 +285,16 @@ following:
 
 You can directly pass the index of the command or the SHA1 to run
 the command.
-"""
+""" > $USAGE_CACHE
 
     PIN_USAGE_MODE=1
     for cmd in ${ALL_COMMANDS[@]}; do
-	pin-cmd-handler $cmd
+	pin-cmd-handler $cmd >> $USAGE_CACHE
     done
+    cat $USAGE_CACHE
+    if [ "$DISABLE_CACHE" = "true" ]; then
+	rm $USAGE_CACHE
+    fi
 }
 
 function pin-install() {
@@ -307,6 +324,9 @@ function pin-install() {
     if [ -f $SYNC_SCRIPT ]; then
 	cp $SYNC_SCRIPT $install_dir
     fi
+    echo -n "Choose a unique name as your CL1P.net namespace (please don't use any sensitive information): "
+    _read cl1p_ns
+    echo CL1P_NAMESPACE=$cl1p_ns >> ${CFG}.tmp
     echo "Ensure that $install_dir is in your PATH variable."
     mv ${CFG}.tmp $CFG
     echo "Add following line in your <sh>rc file for alias support:"
@@ -356,6 +376,9 @@ function pin-ls() {
     fi
 
     cat $LS_OUTPUT_CACHE | less
+    if [ "$DISABLE_CACHE" = "true" ]; then
+	rm $LS_OUTPUT_CACHE
+    fi
 }
 
 function pin-tags() {
@@ -523,6 +546,25 @@ function pin-grep() {
 	CMD_ID=$((CMD_ID+1))
     done
     cat $GREP_CACHE/$1
+    if [ "$DISABLE_CACHE" = "true" ]; then
+	rm -rf $GREP_CACHE
+	return
+    fi
+    object=$(echo $GREP_CACHE/$(cat $GREP_CACHE/$1 | sha1sum - | cut -d " " -f1))
+    cp $GREP_CACHE/$1 $object
+    rm $GREP_CACHE/$1
+    ln -s $object $GREP_CACHE/$1
+}
+
+function pin-copy() {
+    TMP_CMD_FILE=$(_get_tmp_file)
+    cat > $TMP_CMD_FILE
+    _upload_to_cl1p $TMP_CMD_FILE $(_get_clipboard_url)
+    rm $TMP_CMD_FILE
+}
+
+function pin-paste() {
+    curl -s $(_get_clipboard_url) | base64 -d - 2>/dev/null
 }
 
 function pin-cmd-handler() {
@@ -735,6 +777,47 @@ function pin-cmd-handler() {
 	    fi
 	    echo ${ALL_COMMANDS[@]}
 	    ;;
+	"${ALL_COMMANDS[38]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  copy\t\t\t\tCopy from stdin to cl1p.net"
+		return
+	    fi
+	    pin-copy
+	    ;;
+	"${ALL_COMMANDS[39]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  list-all\t\t\tPaste from cl1p.net to stdout"
+		return
+	    fi
+	    pin-paste
+	    ;;
+	"${ALL_COMMANDS[40]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  show-config\t\t\tPrint config file"
+		return
+	    fi
+	    cat $CFG
+	    ;;
+	"${ALL_COMMANDS[41]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  disable-cache\t\t\tDisable output caching. This may result in slow outputs."
+		return
+	    fi
+	    echo "DISABLE_CACHE=true" >> $CFG
+	    TMP_CMD_FILE=$(_get_tmp_file)
+	    cat $CFG | sort -u > $TMP_CMD_FILE
+	    mv $TMP_CMD_FILE $CFG
+	    _clear_caches
+	    ;;
+	"${ALL_COMMANDS[42]}")
+	    if [ "$PIN_USAGE_MODE" = "1" ]; then
+		echo -e "  enable-cache\t\t\tEnable output caching."
+		return
+	    fi
+	    TMP_CMD_FILE=$(_get_tmp_file)
+	    cat $CFG | grep -v "DISABLE_CACHE" > $TMP_CMD_FILE
+	    mv $TMP_CMD_FILE $CFG
+	    ;;
 	*)
 	    echo "Unknown command $1."
 	    pin-usage
@@ -773,7 +856,7 @@ function main() {
 	NEW="\033[1;32m"
 	STOP="\033[0m"
     fi
-    
+
     pin-cmd-handler $@
 }
 
