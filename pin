@@ -22,40 +22,43 @@ ALIAS_FILE=~/.pin-alias
 LS_OUTPUT_CACHE=/tmp/pin-ls-cache
 GREP_CACHE=/tmp/pin-grep-cache/
 USAGE_CACHE=/tmp/pin-usage
+VERSION=1.0
 
 ## All possible commands
 ALLCMDS=(
     ls		## 0
     rm		## 1
     sync	## 2
-    i import	## 4
-    ib64 import-b64	## 6
-    e export	## 7 8
-    eb64 export-b64	## 9 10
-    grep	## 11
-    desc describe	## 12 13
-    watch	## 14
-    run		## 15
-    tags	## 16
-    dump	## 17
-    fork	## 18
-    install	## 19
-    generate-b64	## 20
-    sv save save-cmd	## 21 22 23
-    svb save-blob	## 24 25
-    svs save-script	## 26 27
-    cr create create-script	## 28 29 30
-    crb create-blob	## 31 32
-    crc create-cmd	## 33 34
-    cc clear-cache	## 35 36
-    list-all		## 37
-    copy	## 38
-    paste	## 39
-    show-config	## 40
-    disable-cache	## 41
-    enable-cache	## 42
-    self-upload		## 43
-    usage-full	## 44
+    import	## 3
+    import-b64	## 4
+    export	## 5
+    export-b64	## 6
+    grep	## 7
+    desc	## 8
+    watch	## 9
+    run		## 10
+    tags	## 11
+    dump	## 12
+    fork	## 13
+    install	## 14
+    generate-b64	## 15
+    save-cmd	## 16
+    save-blob	## 17
+    save-script	## 18
+    create-script	## 19
+    create-blob	## 20
+    create-cmd	## 21
+    clear-cache	## 22
+    list-all	## 23
+    copy	## 24
+    paste	## 25
+    show-config	## 26
+    disable-cache	## 27
+    enable-cache	## 28
+    self-upload		## 29
+    usage-full	## 30
+    categories	## 31
+    version	## 32
 )
 
 ## Global Control Variables
@@ -63,6 +66,20 @@ g_pin_input_line=1
 g_pin_input_cached=0
 
 ## Helper functions
+function _version() {
+    echo "pin version $VERSION."
+}
+
+function _load_cmd() {
+    DESC=""
+    CMD=""
+    TYPE=""
+    . $1
+    if [ "$CATEGORY" = "" ]; then
+	CATEGORY="uncategorized"
+    fi
+}
+
 function _get_tmp_file() {
     echo "/tmp/pin-$(date +%s)"
 }
@@ -72,7 +89,7 @@ function _get_clipboard_url() {
 }
 
 function _clear_caches() {
-    rm -rf $GREP_CACHE $LS_OUTPUT_CACHE $USAGE_CACHE*
+    rm -rf $GREP_CACHE ${LS_OUTPUT_CACHE}* $USAGE_CACHE*
 }
 
 function _cmd_usage_advanced() {
@@ -208,17 +225,27 @@ function _save() {
     id=$(echo $command | sha1sum - | cut -d " " -f1)
     if [ -f $CMDS_DIR/$id ]; then
 	_confirm "Command exists. Overwrite?" || return 0
+	_load_cmd $CMDS_DIR/$id
     fi
-    echo -n "Short Description (enter to skip): "
+    echo -n "Short Description (enter to skip): [$DESC]"
     _read description
+    if [ "$description" = "" ]; then
+	description=$DESC
+    fi
     echo -n "Alias (enter to skip): "
     _read alias
     if [ "$alias" != "" ]; then
      	echo "alias ${alias}=\"pin run $id\"" >> $ALIAS_FILE
     fi
+    echo -n "Category: [$CATEGORY]"
+    _read cat
+    if [ "$cat" = "" ]; then
+	cat=$CATEGORY
+    fi
     echo "CMD=\"$command\"" > $CMDS_DIR/$id
     echo "DESC=\"$description\"" >> $CMDS_DIR/$id
     echo "TYPE=$2" >> $CMDS_DIR/$id
+    echo "CATEGORY=$category" >> $CMDS_DIR/$id
     echo "Created $id."
 }
 
@@ -249,7 +276,7 @@ function _exec() {
     pin-describe $(basename $filename)
     eval $ran_saved=1
     echo "Executing this command..."
-    . $filename
+    _load_cmd $filename
     if [ "$TYPE" = "script" ]; then
 	TMP_CMD_FILE=$(_get_tmp_file)
 	echo $CMD | base64 -d - > $TMP_CMD_FILE
@@ -389,20 +416,27 @@ function pin-export() {
 
 function pin-ls() {
     CMD_ID=0
+    CACHE=$(echo ${LS_OUTPUT_CACHE}_$1)
 
-    if [ ! -f "$LS_OUTPUT_CACHE" ]; then
-	echo "" > $LS_OUTPUT_CACHE
-	_print_hdr > $LS_OUTPUT_CACHE
+    if [ ! -f "$CACHE" ]; then
+	echo "" > $CACHE
+	_print_hdr > $CACHE
 	for file in $(_list_all); do
-	    . $file
-	    _print_cmd >> $LS_OUTPUT_CACHE
+	    _load_cmd $file
+	    if [ "$1" != "" ]; then
+		if [ "$CATEGORY" != "$1" ]; then
+		    CMD_ID=$((CMD_ID+1))
+		    continue
+		fi
+	    fi
+	    _print_cmd >> $CACHE
 	    CMD_ID=$((CMD_ID+1))
 	done
     fi
 
-    cat $LS_OUTPUT_CACHE | less -r
+    cat $CACHE
     if [ "$DISABLE_CACHE" = "true" ]; then
-	rm $LS_OUTPUT_CACHE
+	rm $CACHE
     fi
 }
 
@@ -421,7 +455,7 @@ function pin-fork() {
     if [ "$?" != "0" ]; then
 	return
     fi
-    . $filename
+    _load_cmd $filename
     TMP_CMD_FILE=$(_get_tmp_file)
     echo "$CMD" | base64 -d - > $TMP_CMD_FILE
     $EDITOR $TMP_CMD_FILE
@@ -451,7 +485,7 @@ function pin-import() {
 	fi
 	echo "$b64" | base64 -d - > $TMP_CMD_FILE
     fi
-    . $TMP_CMD_FILE
+    _load_cmd $TMP_CMD_FILE
     if [ "$CMD" = "" ]; then
 	echo "No command imported."
 	rm $TMP_CMD_FILE
@@ -538,11 +572,14 @@ function pin-describe {
 	echo "Command not found."
 	return 1
     fi
-    . $filename
+
+    _load_cmd $filename
 
     echo -e "SHA1:		${BOLD}$(basename $filename)${STOP}"
     echo -e "Command:	${BOLD}$(echo $CMD | base64 -d -)${STOP}"
     echo -e "Description:	$DESC"
+    echo -e "Type:		$TYPE"
+    echo -e "Category:	$CATEGORY"
 }
 
 function pin-dump {
@@ -550,7 +587,7 @@ function pin-dump {
     if [ "$?" != "0" ]; then
 	_fail "Object not found."
     fi
-    . $filename
+    _load_cmd $filename
     echo $CMD | base64 -d -
 }
 
@@ -563,7 +600,7 @@ function pin-grep() {
     mkdir -p $GREP_CACHE
     _print_hdr > $GREP_CACHE/$1
     for file in $(_list_all); do
-	. $file
+	_load_cmd $file
 	echo "$(echo $CMD | base64 -d -) $DESC" | grep -i $1 > /dev/null
 	if [ "$?" = "0" ]; then
 	    _print_cmd  >> $GREP_CACHE/$1
@@ -583,7 +620,11 @@ function pin-grep() {
 
 function pin-copy() {
     TMP_CMD_FILE=$(_get_tmp_file)
-    cat > $TMP_CMD_FILE
+    if [ "$1" != "" ]; then
+	cat $1 > $TMP_CMD_FILE
+    else
+	cat > $TMP_CMD_FILE
+    fi
     _upload_to_cl1p $TMP_CMD_FILE $(_get_clipboard_url)
     rm $TMP_CMD_FILE
 }
@@ -592,66 +633,63 @@ function pin-paste() {
     curl -s $(_get_clipboard_url) | base64 -d - 2>/dev/null
 }
 
+function pin-show-categories() {
+    TMP_CMD_FILE=$(_get_tmp_file)
+    for file in $(_list_all); do
+	_load_cmd $file
+	echo $CATEGORY >> $TMP_CMD_FILE
+    done
+    cat $TMP_CMD_FILE | sort -u
+    rm $TMP_CMD_FILE
+}
+
 function pin-cmd-handler() {
     case "$1" in
 	"${ALLCMDS[0]}")
-	    _cmd_usage_basic "ls\t\t\t\tList all commands" && return
-	    pin-ls
+	    _cmd_usage_basic "ls [CATEGORY]\tList all commands. Optionally pass category" && return
+	    shift
+	    pin-ls $@
 	    ;;
 	"${ALLCMDS[1]}")
-	    _cmd_usage_basic "rm <cmd>\t\t\tRemove a specific command" && return
+	    _cmd_usage_basic "rm CMD\t\tRemove a specific command" && return
 	    shift
 	    pin-rm $@
 	    ;;
 	"${ALLCMDS[2]}")
-	    _cmd_usage_basic "sync\t\t\t\tSync commands" && return
+	    _cmd_usage_basic "sync\t\t\tSync commands" && return
 	    pin-sync
 	    ;;
 	"${ALLCMDS[3]}")
-	    _cmd_usage_basic "${ALLCMDS[3]} | ${ALLCMDS[4]} <url>\t\tImport a new command from url" && return
-	    ;&
-	"${ALLCMDS[4]}")
+	    _cmd_usage_basic "import URL\t\tImport a new command from url" && return
 	    _cmd_usage_basic && return 
 	    pin-import $2
 	    ;;
-	"${ALLCMDS[5]}")
-	    _cmd_usage_advanced "${ALLCMDS[5]} | ${ALLCMDS[6]}\t\tImport a new command from base64 string" && return
-	    ;&
-	"${ALLCMDS[6]}")
-	    _cmd_usage_basic && return 
+	"${ALLCMDS[4]}")
+	    _cmd_usage_advanced "import-b64\t\tImport a new command from base64 string" && return
 	    pin-import $2 b64
 	    ;;
-	"${ALLCMDS[7]}")
-	    _cmd_usage_basic "${ALLCMDS[7]} | ${ALLCMDS[8]}\t\t\tExport a saved command as url" && return
-	    ;&
-	"${ALLCMDS[8]}")
-	    _cmd_usage_basic && return 
+	"${ALLCMDS[5]}")
+	    _cmd_usage_basic "export\t\tExport a saved command as url" && return
 	    pin-export $2
 	    ;;
-	"${ALLCMDS[9]}")
-	    _cmd_usage_advanced "${ALLCMDS[9]} | ${ALLCMDS[10]}\t\tExport a saved command as a base64 encoded string" && return
-	    ;&
-	"${ALLCMDS[10]}")
-	    _cmd_usage_basic && return 
+	"${ALLCMDS[6]}")
+	    _cmd_usage_advanced "export-b64\t\tExport a saved command as a base64 encoded string" && return
 	    pin-export $2 b64
 	    ;;
-	"${ALLCMDS[11]}")
-	    _cmd_usage_basic "grep <term>\t\t\tSearch commands matching the passed term" && return
+	"${ALLCMDS[7]}")
+	    _cmd_usage_basic "grep TERM\t\tSearch commands matching the passed term" && return
 	    pin-grep $2
 	    ;;
-	"${ALLCMDS[12]}")
-	    _cmd_usage_basic "${ALLCMDS[12]} | ${ALLCMDS[13]} <cmd>\tDescribe a saved command" && return
-	    ;&
-	"${ALLCMDS[13]}")
-	    _cmd_usage_basic && return
+	"${ALLCMDS[8]}")
+	    _cmd_usage_basic "desc CMD\t\tDescribe a saved command" && return
 	    pin-describe $2
 	    ;;
-	"${ALLCMDS[14]}")
-	    _cmd_usage_basic "watch <cmd>\t\t\tWatch a command" && return
+	"${ALLCMDS[9]}")
+	    _cmd_usage_basic "watch CMD\t\tWatch a command" && return
 	    WATCH=watch
 	    ;&
-	"${ALLCMDS[15]}")
-	    _cmd_usage_basic "run <cmd>\t\t\tRun a command" && return
+	"${ALLCMDS[10]}")
+	    _cmd_usage_basic "run CMD\t\tRun a command" && return
 	    shift
 	    _exec ran_saved $@
 	    rc=$?
@@ -664,121 +702,109 @@ function pin-cmd-handler() {
 		exit $rc
 	    fi
 	    ;;
-	"${ALLCMDS[16]}")
-	    _cmd_usage_basic "tags <cmd>\t\t\tShow all tags" && return
+	"${ALLCMDS[11]}")
+	    _cmd_usage_basic "tags CMD\t\tShow all tags" && return
 	    shift
 	    pin-tags $@
 	    ;;
-	"${ALLCMDS[17]}")
-	    _cmd_usage_basic "dump <cmd>\t\t\tDump command / script or blob to stdout" && return
+	"${ALLCMDS[12]}")
+	    _cmd_usage_basic "dump CMD\t\tDump command / script or blob to stdout" && return
 	    pin-dump $2
 	    ;;
-	"${ALLCMDS[18]}")
-	    _cmd_usage_basic "fork <cmd>\t\t\tFork a command to create a new one" && return
+	"${ALLCMDS[13]}")
+	    _cmd_usage_basic "fork CMD\t\tFork a command to create a new one" && return
 	    shift
 	    pin-fork $@
 	    ;;
-	"${ALLCMDS[19]}")
-	    _cmd_usage_advanced "install\t\t\tInstall pin" && return
+	"${ALLCMDS[14]}")
+	    _cmd_usage_advanced "install\t\tInstall pin" && return
 	    pin-install
 	    ;;
-	"${ALLCMDS[20]}")
-	    _cmd_usage_advanced "generate-b64\t\t\tGenerate pin base64 encoded package" && return
+	"${ALLCMDS[15]}")
+	    _cmd_usage_advanced "generate-b64\t\tGenerate pin base64 encoded package" && return
 	    pin-generate-b64
 	    ;;
-	"${ALLCMDS[21]}")
-	    _cmd_usage_basic "${ALLCMDS[21]} | ${ALLCMDS[22]}| ${ALLCMDS[23]} <str>\tSave a new command" && return
-	    ;&
-	"${ALLCMDS[22]}" | "${ALLCMDS[23]}")
-	    _cmd_usage_basic && return
+	"${ALLCMDS[16]}")
+	    _cmd_usage_basic "save-cmd STRING\tSave a new command" && return
 	    shift
 	    pin-save $@
 	    ;;
-	"${ALLCMDS[24]}")
-	    _cmd_usage_basic "${ALLCMDS[24]} | ${ALLCMDS[25]}\t\tSave a new blob from stdin" && return
-	    ;&
-	"${ALLCMDS[25]}")
-	    _cmd_usage_basic && return
+	"${ALLCMDS[17]}")
+	    _cmd_usage_basic "save-blob\t\tSave a new blob from stdin" && return
 	    shift
 	    pin-save-blob $@
 	    ;;
-	"${ALLCMDS[26]}")
-	    _cmd_usage_basic "${ALLCMDS[26]} | ${ALLCMDS[27]}\t\tSave a new script from stdin" && return
-	    ;&
-	"${ALLCMDS[27]}")
-	    _cmd_usage_basic && return
+	"${ALLCMDS[18]}")
+	    _cmd_usage_basic "save-script\t\tSave a new script from stdin" && return
 	    shift
 	    pin-save-script $@
 	    ;;
-	"${ALLCMDS[28]}")
-	    _cmd_usage_basic "${ALLCMDS[28]} | ${ALLCMDS[29]}| ${ALLCMDS[30]}\tOpen editor to create and save a new script" && return
-	    ;&
-	"${ALLCMDS[29]}" | "${ALLCMDS[30]}")
-	    _cmd_usage_basic && return
+	"${ALLCMDS[19]}")
+	    _cmd_usage_basic "create-script\tOpen editor to create and save a new script" && return
 	    pin-create script
 	    ;;
-	"${ALLCMDS[31]}")
-	    _cmd_usage_basic "${ALLCMDS[31]} | ${ALLCMDS[32]}\t\tOpen editor to create and save a new blob" && return
-	    ;&
-	"${ALLCMDS[32]}")
-	    _cmd_usage_basic && return
+	"${ALLCMDS[20]}")
+	    _cmd_usage_basic "create-blob\t\tOpen editor to create and save a new blob" && return
+
 	    pin-create blob
 	    ;;
-	"${ALLCMDS[33]}")
-	    _cmd_usage_basic "${ALLCMDS[33]} | ${ALLCMDS[34]}\t\tOpen editor to create and save a new command" && return
-	    ;&
-	"${ALLCMDS[34]}")
-	    _cmd_usage_basic && return
+	"${ALLCMDS[21]}")
+	    _cmd_usage_basic "create-cmd\t\tOpen editor to create and save a new command" && return
 	    pin-create cmd
 	    ;;
-	"${ALLCMDS[35]}")
-	    _cmd_usage_advanced "${ALLCMDS[35]} | ${ALLCMDS[36]}\t\tClear all caches" && return
-	    ;&
-	"${ALLCMDS[36]}")
-	    _cmd_usage_advanced && return
+	"${ALLCMDS[22]}")
+	    _cmd_usage_advanced "clear-caches\t\tClear all caches" && return
 	    _clear_caches
 	    ;;
-	"${ALLCMDS[37]}")
-	    _cmd_usage_advanced "list-all\t\t\tLists all supported commands" && return
+	"${ALLCMDS[23]}")
+	    _cmd_usage_advanced "list-all\t\tLists all supported commands" && return
 	    echo ${ALLCMDS[@]}
 	    ;;
-	"${ALLCMDS[38]}")
-	    _cmd_usage_basic "copy\t\t\t\tCopy from stdin to cl1p.net" && return 
-	    pin-copy
+	"${ALLCMDS[24]}")
+	    _cmd_usage_basic "copy [FILE]\t\tCopy from stdin to cl1p.net. Optionally copy file if passed." && return
+	    shift
+	    pin-copy $@
 	    ;;
-	"${ALLCMDS[39]}")
-	    _cmd_usage_basic "paste\t\t\tPaste from cl1p.net to stdout" && return
+	"${ALLCMDS[25]}")
+	    _cmd_usage_basic "paste\t\tPaste from cl1p.net to stdout" && return
 	    pin-paste
 	    ;;
-	"${ALLCMDS[40]}")
-	    _cmd_usage_advanced "show-config\t\t\tPrint config file" && return
+	"${ALLCMDS[26]}")
+	    _cmd_usage_advanced "show-config\t\tPrint config file" && return
 	    cat $CFG
 	    ;;
-	"${ALLCMDS[41]}")
-	    _cmd_usage_advanced "disable-cache\t\tDisable output caching. This may result in slow outputs." && return
+	"${ALLCMDS[27]}")
+	    _cmd_usage_advanced "disable-cache\tDisable output caching. This may result in slow outputs." && return
 	    echo "DISABLE_CACHE=true" >> $CFG
 	    TMP_CMD_FILE=$(_get_tmp_file)
 	    cat $CFG | sort -u > $TMP_CMD_FILE
 	    mv $TMP_CMD_FILE $CFG
 	    _clear_caches
 	    ;;
-	"${ALLCMDS[42]}")
-	    _cmd_usage_advanced "enable-cache\t\t\tEnable output caching." && return
+	"${ALLCMDS[28]}")
+	    _cmd_usage_advanced "enable-cache\t\tEnable output caching." && return
 	    TMP_CMD_FILE=$(_get_tmp_file)
 	    cat $CFG | grep -v "DISABLE_CACHE" > $TMP_CMD_FILE
 	    mv $TMP_CMD_FILE $CFG
 	    ;;
-	"${ALLCMDS[43]}")
-	    _cmd_usage_advanced "self-upload\t\t\tUpload this program to cl1p. Useful for setting up on new machines" && return
+	"${ALLCMDS[29]}")
+	    _cmd_usage_advanced "self-upload\t\tUpload this program to cl1p. Useful for setting up on new machines" && return
 	    TMP_CMD_FILE=$(_get_tmp_file)
 	    cat $BASH_SOURCE | pin-copy
 	    echo -e "Run following command on the remote machine to get started:\n"
 	    echo "curl -s $(_get_clipboard_url) | base64 -d - > pin; chmod +x pin"
 	    ;;
-	"${ALLCMDS[44]}")
-	    _cmd_usage_basic "usage-full\t\t\tFull usage with advanced commands" && return
-	    
+	"${ALLCMDS[30]}")
+	    _cmd_usage_basic "usage-full\t\tFull usage with advanced commands" && return
 	    pin-usage advanced
+	    ;;
+	"${ALLCMDS[31]}")
+	    _cmd_usage_basic "categories\t\tShow all categories" && return
+	    pin-show-categories
+	    ;;
+	"${ALLCMDS[32]}")
+	    _cmd_usage_basic "version\t\tShow pin version" && return
+	    _version
 	    ;;
 	*)
 	    echo "Unknown command $1."
