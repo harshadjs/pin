@@ -1,0 +1,7 @@
+#!/bin/bash
+
+_setup
+
+cat $TESTDIR/blob | sha1sum -
+cat $TESTDIR/blob | $PIN_PROG save-blob
+$PIN_PROG dump 0 | sha1sum -

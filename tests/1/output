@@ -6,32 +6,26 @@ following:
 You can directly pass the index of the command or the SHA1 to run
 the command.
 
-  ls				List all commands
-  rm <cmd>			Remove a specific command
-  sync				Sync commands
-  i | import <url>		Import a new command from url
-  ib64 | import-b64		Import a new command from base64 string
-  e | export			Export a saved command as url
-  eb64 | export-b64		Export a saved command as a base64 encoded string
-  grep <term>			Search commands matching the passed term
-  desc | describe <cmd>		Describe a saved command
-  watch <cmd>			Watch a command
-  run <cmd>			Run a command
-  tags <cmd>			Show all tags
-  dump <cmd>			Dump command / script or blob to stdout
-  fork <cmd>			Fork a command to create a new one
-  install			Install pin
-  generate-b64			Generate pin base64 encoded package
-  sv | save| save-cmd <str>	Save a new command
-  svb | save-blob		Save a new blob from stdin
-  svs | save-script		Save a new script from stdin
-  cr | create| create-script	Open editor to create and save a new script
-  crb | create-blob		Open editor to create and save a new blob
-  crc | create-cmd		Open editor to create and save a new command
-  cc | clear-cache		Clear all caches
-  list-all			Lists all supported commands
-  copy				Copy from stdin to cl1p.net
-  list-all			Paste from cl1p.net to stdout
-  show-config			Print config file
-  disable-cache			Disable output caching. This may result in slow outputs.
-  enable-cache			Enable output caching.
+   ls [CATEGORY]	List all commands. Optionally pass category
+   rm CMD		Remove a specific command
+   sync			Sync commands
+   import URL		Import a new command from url
+   export		Export a saved command as url
+   grep TERM		Search commands matching the passed term
+   desc CMD		Describe a saved command
+   watch CMD		Watch a command
+   run CMD		Run a command
+   tags CMD		Show all tags
+   dump CMD		Dump command / script or blob to stdout
+   fork CMD		Fork a command to create a new one
+   save-cmd STRING	Save a new command
+   save-blob		Save a new blob from stdin
+   save-script		Save a new script from stdin
+   create-script	Open editor to create and save a new script
+   create-blob		Open editor to create and save a new blob
+   create-cmd		Open editor to create and save a new command
+   copy [FILE]		Copy from stdin to cl1p.net. Optionally copy file if passed.
+   paste		Paste from cl1p.net to stdout
+   usage-full		Full usage with advanced commands
+   categories		Show all categories
+   version		Show pin version

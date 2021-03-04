@@ -2,6 +2,6 @@
 
 _setup
 
-$PIN_PROG save ls
+$PIN_PROG save-cmd ls
 $PIN_PROG desc 0
 PIN_INPUT=$TESTDIR/pin-input.rm $PIN_PROG rm 0

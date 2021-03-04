@@ -2,5 +2,5 @@
 
 _setup
 
-$PIN_PROG save ls
+$PIN_PROG save-cmd ls
 $PIN_PROG desc 0

@@ -2,14 +2,19 @@
 Command entered: (0)ls 
 Enter the indices from above command that are arguments (enter to skip): 
 Command to be saved:  ls
-Short Description (enter to skip): 
+Short Description (enter to skip): []
 Alias (enter to skip): 
+Category: []
 Created dd2e15c7c85ae4e083df5a235cec7d67b707500c.
 SHA1:		dd2e15c7c85ae4e083df5a235cec7d67b707500c
 Command:	ls
 Description:	List contents of dir
+Type:		cmd
+Category:	uncategorized
 SHA1:		dd2e15c7c85ae4e083df5a235cec7d67b707500c
 Command:	ls
 Description:	List contents of dir
+Type:		cmd
+Category:	uncategorized
 Delete above command? [y/N]: 
 Deleted.

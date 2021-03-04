@@ -2,15 +2,20 @@
 Command entered: (0)echo (1)test 
 Enter the indices from above command that are arguments (enter to skip): 
 Command to be saved:  echo test
-Short Description (enter to skip): 
+Short Description (enter to skip): []
 Alias (enter to skip): 
+Category: []
 Created e39df5d6ccf320d41da348bd9bcc7a77ba8e0586.
 SHA1:		e39df5d6ccf320d41da348bd9bcc7a77ba8e0586
 Command:	echo test
 Description:	Echo test string
+Type:		cmd
+Category:	uncategorized
 SHA1:		e39df5d6ccf320d41da348bd9bcc7a77ba8e0586
 Command:	echo test
 Description:	Echo test string
+Type:		cmd
+Category:	uncategorized
 Executing this command...
 echo test
 test

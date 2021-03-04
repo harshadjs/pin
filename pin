@@ -576,7 +576,11 @@ function pin-describe {
     _load_cmd $filename
 
     echo -e "SHA1:		${BOLD}$(basename $filename)${STOP}"
-    echo -e "Command:	${BOLD}$(echo $CMD | base64 -d -)${STOP}"
+    if [ "$TYPE" != "blob" ]; then
+	echo -e "Command:	${BOLD}$(echo $CMD | base64 -d -)${STOP}"
+    else
+	echo -e "Command:	${BOLD}<blob>${STOP}"
+    fi
     echo -e "Description:	$DESC"
     echo -e "Type:		$TYPE"
     echo -e "Category:	$CATEGORY"
